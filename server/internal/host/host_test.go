@@ -2,6 +2,9 @@ package host
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/json"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -48,13 +51,18 @@ func mustIssue(t *testing.T, h *Host, ref string, uses int) *IssueResp {
 }
 
 // agentKeyForTest 造一把测试用 agentKey。
-func agentKeyForTest(t *testing.T) (pubB64, nonce string) {
+func agentKeyForTest(t *testing.T) (pubB64, nonce string, priv ed25519.PrivateKey) {
 	t.Helper()
-	pub, _, err := newRoomKey() // 同一套 ed25519 生成器
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("生成 agentKey: %v", err)
 	}
-	return pubB64Of(pub), "nonce-" + strings.Repeat("a", 8)
+	return pubB64Of(pub), "nonce-" + strings.Repeat("a", 8), priv
+}
+
+// proofFor 造 join 证明（A/HOST-05：join 必须证明私钥在手）。
+func proofFor(priv ed25519.PrivateKey, cardOrRef, nonce string) string {
+	return pubB64Of(ed25519.Sign(priv, JoinProofMessage(cardOrRef, nonce)))
 }
 
 func pubB64Of(pub []byte) string { return b64url.EncodeToString(pub) }
@@ -77,12 +85,12 @@ func TestJoinUsesExhausted(t *testing.T) {
 	h := newTestHost(t)
 	room := mustCreate(t, h, 3)
 	card := mustIssue(t, h, room.Ref, 1)
-	pub1, nonce1 := agentKeyForTest(t)
-	if _, err := h.Join(context.Background(), JoinReq{Card: card.Card, AgentPub: pub1, Nonce: nonce1, Alias: "甲"}); err != nil {
+	pub1, nonce1, priv1 := agentKeyForTest(t)
+	if _, err := h.Join(context.Background(), JoinReq{Card: card.Card, AgentPub: pub1, Nonce: nonce1, Proof: proofFor(priv1, card.Card, nonce1), Alias: "甲"}); err != nil {
 		t.Fatalf("第一个 join 应成功: %v", err)
 	}
-	pub2, nonce2 := agentKeyForTest(t)
-	_, err := h.Join(context.Background(), JoinReq{Card: card.Card, AgentPub: pub2, Nonce: nonce2, Alias: "乙"})
+	pub2, nonce2, priv2 := agentKeyForTest(t)
+	_, err := h.Join(context.Background(), JoinReq{Card: card.Card, AgentPub: pub2, Nonce: nonce2, Proof: proofFor(priv2, card.Card, nonce2), Alias: "乙"})
 	if err == nil {
 		t.Fatal("uses=1 的卡第二个 join 竟然成功")
 	}
@@ -116,8 +124,8 @@ func TestJoinUnknownInviteID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("IssueLayered: %v", err)
 	}
-	pub, nonce := agentKeyForTest(t)
-	_, jerr := h.Join(context.Background(), JoinReq{Card: cardText, AgentPub: pub, Nonce: nonce, Alias: "丙"})
+	pub, nonce, priv := agentKeyForTest(t)
+	_, jerr := h.Join(context.Background(), JoinReq{Card: cardText, AgentPub: pub, Nonce: nonce, Proof: proofFor(priv, cardText, nonce), Alias: "丙"})
 	if jerr == nil {
 		t.Fatal("ids 与实际邀请集不符的卡竟然 join 成功")
 	}
@@ -132,12 +140,12 @@ func TestJoinKeyReplaySameSeat(t *testing.T) {
 	h := newTestHost(t)
 	room := mustCreate(t, h, 3)
 	card := mustIssue(t, h, room.Ref, 2)
-	pub, nonce := agentKeyForTest(t)
-	first, err := h.Join(context.Background(), JoinReq{Card: card.Card, AgentPub: pub, Nonce: nonce, Alias: "甲"})
+	pub, nonce, priv := agentKeyForTest(t)
+	first, err := h.Join(context.Background(), JoinReq{Card: card.Card, AgentPub: pub, Nonce: nonce, Proof: proofFor(priv, card.Card, nonce), Alias: "甲"})
 	if err != nil {
 		t.Fatalf("首次 join: %v", err)
 	}
-	second, err := h.Join(context.Background(), JoinReq{Card: card.Card, AgentPub: pub, Nonce: nonce, Alias: "甲"})
+	second, err := h.Join(context.Background(), JoinReq{Card: card.Card, AgentPub: pub, Nonce: nonce, Proof: proofFor(priv, card.Card, nonce), Alias: "甲"})
 	if err != nil {
 		t.Fatalf("重放 join 不该失败: %v", err)
 	}
@@ -167,15 +175,15 @@ func TestReclaimByPubKey(t *testing.T) {
 	h := newTestHost(t)
 	room := mustCreate(t, h, 2)
 	card := mustIssue(t, h, room.Ref, 1)
-	pub, nonce := agentKeyForTest(t)
-	first, err := h.Join(context.Background(), JoinReq{Card: card.Card, AgentPub: pub, Nonce: nonce, Alias: "甲"})
+	pub, nonce, priv := agentKeyForTest(t)
+	first, err := h.Join(context.Background(), JoinReq{Card: card.Card, AgentPub: pub, Nonce: nonce, Proof: proofFor(priv, card.Card, nonce), Alias: "甲"})
 	if err != nil {
 		t.Fatalf("首次 join: %v", err)
 	}
 
 	// ① 立刻用同一把私钥、不带卡、换个 nonce 回来：必须认回原座位。
 	//    旧实例 1 秒前还活跃，alias 路径会撞 member_active，所以这里同时也锁住了 ForceReclaim。
-	got, err := h.Join(context.Background(), JoinReq{Ref: room.Ref, AgentPub: pub, Nonce: nonce + "-2", Alias: "甲"})
+	got, err := h.Join(context.Background(), JoinReq{Ref: room.Ref, AgentPub: pub, Nonce: nonce + "-2", Proof: proofFor(priv, room.Ref, nonce+"-2"), Alias: "甲"})
 	if err != nil {
 		t.Fatalf("凭私钥认回: %v", err)
 	}
@@ -195,15 +203,15 @@ func TestReclaimByPubKey(t *testing.T) {
 
 	// ② 认回时卡已被用完也不能挡（invite_exhausted 不该出现）。
 	// ③ 一把从没进过场的私钥：必须 404 not_seated，而不是悄悄开新座。
-	otherPub, otherNonce := agentKeyForTest(t)
-	_, oerr := h.Join(context.Background(), JoinReq{Ref: room.Ref, AgentPub: otherPub, Nonce: otherNonce, Alias: "乙"})
+	otherPub, otherNonce, otherPriv := agentKeyForTest(t)
+	_, oerr := h.Join(context.Background(), JoinReq{Ref: room.Ref, AgentPub: otherPub, Nonce: otherNonce, Proof: proofFor(otherPriv, room.Ref, otherNonce), Alias: "乙"})
 	oe, ok := oerr.(*opError)
 	if !ok || oe.Code != "not_seated" {
 		t.Fatalf("期望 not_seated，实际 %v", oerr)
 	}
 
 	// ④ 只给 ref 又给一把空 pub：参数错误要说清楚。
-	if _, err := h.Join(context.Background(), JoinReq{Ref: room.Ref, AgentPub: "x", Nonce: "n"}); err == nil {
+	if _, err := h.Join(context.Background(), JoinReq{Ref: room.Ref, AgentPub: "x", Nonce: "n", Proof: "AAAA"}); err == nil {
 		t.Fatal("坏 agentPub 竟然通过")
 	}
 }
@@ -212,8 +220,8 @@ func TestConsentDryRunDoesNotJoin(t *testing.T) {
 	h := newTestHost(t)
 	room := mustCreate(t, h, 3)
 	card := mustIssue(t, h, room.Ref, 1)
-	pub, nonce := agentKeyForTest(t)
-	res, err := h.Join(context.Background(), JoinReq{Card: card.Card, AgentPub: pub, Nonce: nonce, DryRun: true})
+	pub, nonce, priv := agentKeyForTest(t)
+	res, err := h.Join(context.Background(), JoinReq{Card: card.Card, AgentPub: pub, Nonce: nonce, Proof: proofFor(priv, card.Card, nonce), DryRun: true})
 	if err != nil {
 		t.Fatalf("dryRun: %v", err)
 	}
@@ -298,5 +306,48 @@ func TestHTTPGuards(t *testing.T) {
 	_ = resp4.Body.Close()
 	if resp4.StatusCode != 200 {
 		t.Fatalf("带 token 的 status 应 200，实际 %d", resp4.StatusCode)
+	}
+}
+
+// TestBodyTooLarge：超过 4MB 的请求体必须给 413 且码可辨认。
+//
+// 为什么单独测：原先超长和"不是 JSON"都回 400 bad_json，排查时会往语法方向查，
+// 而真实原因是体积。
+func TestBodyTooLarge(t *testing.T) {
+	h := newTestHost(t)
+	mustCreate(t, h, 2)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); _ = h.Serve(ctx) }()
+	deadline := nowMillis() + 5000
+	for h.Addr() == "" && nowMillis() < deadline {
+		time.Sleep(10 * time.Millisecond)
+	}
+	addr := h.Addr()
+	if addr == "" {
+		cancel()
+		t.Fatal("Serve 没起来")
+	}
+	defer func() { cancel(); <-done }()
+
+	big := `{"card":"` + strings.Repeat("A", 5<<20) + `"}`
+	req, _ := http.NewRequest("POST", "http://"+addr+"/v1/join", strings.NewReader(big))
+	req.Host = addr
+	req.Header.Set("content-type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("请求失败: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != 413 {
+		t.Fatalf("超长请求体应 413，实际 %d", resp.StatusCode)
+	}
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("响应不是 JSON: %v", err)
+	}
+	e, _ := body["error"].(map[string]any)
+	if e == nil || e["code"] != "body_too_large" {
+		t.Fatalf("错误码不是 body_too_large: %v", body)
 	}
 }

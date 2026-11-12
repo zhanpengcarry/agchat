@@ -76,6 +76,7 @@ type seat struct {
 	Nonce    string   `json:"nonce"`
 	JoinKey  string   `json:"joinKey"`
 	Ord      int      `json:"ord"`
+	Cursor   int64    `json:"cursor,omitempty"` // inbox 长轮询事件游标（没有它 wait 就白给）
 
 	pub ed25519.PublicKey `json:"-"`
 }
@@ -1125,7 +1126,7 @@ func (h *Host) Status(ctx context.Context, ref string) (*StatusResp, error) {
 			Votes:   len(agg.Votes),
 			Budget:  map[string]int{"tokenBudget": led.Total, "used": led.Used, "remaining": led.Left, "pct": led.Pct},
 			Members: members, EndReason: r.EndReason, Winner: r.WinnerProposalID,
-			Head:      HeadView{I: len(rc.log.committedOps()), H: rc.log.head()},
+			Head:      HeadView{I: rc.log.count(), H: rc.log.head()},
 			CreatedAt: r.CreatedAt, StartedAt: r.StartedAt, EndedAt: r.EndedAt,
 		}
 		return nil
@@ -1157,7 +1158,7 @@ func (h *Host) CloseRoom(ctx context.Context, ref string) (*StatusResp, error) {
 	rc.mu.Lock()
 	before, err := h.peek(ctx, rc)
 	if err == nil {
-		_, err = h.eng.Close(ctx, TenantID, rc.roomID, rc.adminKey)
+		_, err = h.eng.Close(ctx, TenantID, rc.roomID, domain.HashToken(rc.adminKey))
 	}
 	if err == nil {
 		err = h.syncLocked(ctx, rc, before)
@@ -1179,9 +1180,13 @@ type JoinReq struct {
 	Ref      string `json:"ref,omitempty"`
 	AgentPub string `json:"agentPub"`
 	Nonce    string `json:"nonce"`
-	Alias    string `json:"alias,omitempty"`
-	Model    string `json:"model,omitempty"`
-	DryRun   bool   `json:"dryRun,omitempty"`
+	// Proof 是 agentKey 对 JoinProofMessage(ref, nonce) 的签名。
+	// 没有它，知道 agentPub（日志/收据里都有）的人就能顶掉别人的 token；
+	// 私钥在手才算这座的主人（A/HOST-05）。
+	Proof  string `json:"proof,omitempty"`
+	Alias  string `json:"alias,omitempty"`
+	Model  string `json:"model,omitempty"`
+	DryRun bool   `json:"dryRun,omitempty"`
 }
 
 // Consent 是同意门要给人看的三行（pm P1 / AC8）。
@@ -1250,6 +1255,10 @@ func (h *Host) Join(ctx context.Context, in JoinReq) (*JoinResp, error) {
 		if card.P.RV != (invite.Rules{Res: invite.RulesVersion, Vote: invite.RulesVersion, Hash: invite.RulesVersion}) {
 			return nil, &opError{Status: 409, Code: "rules_mismatch", Msg: invite.HumanRulesMismatch}
 		}
+		// joinBy 只在验签通过后判：时间戳属于没签名的字段，先判会给出错的分类（A3）。
+		if err := invite.CheckJoinBy(card); err != nil {
+			return nil, &opError{Status: 410, Code: "card_expired", Msg: invite.HumanError(err)}
+		}
 		if ok, reason := admit(card.P.Caps, invite.CapJoin); !ok {
 			return nil, &opError{Status: 403, Code: "capability_denied", Msg: reason}
 		}
@@ -1270,6 +1279,12 @@ func (h *Host) Join(ctx context.Context, in JoinReq) (*JoinResp, error) {
 	}
 	if strings.TrimSpace(in.Nonce) == "" {
 		return nil, newOpErr(400, "nonce_required", "必须带 nonce（joinKey 幂等键的一半）")
+	}
+	if strings.TrimSpace(in.Proof) == "" {
+		return nil, newOpErr(400, "proof_required", "必须带 proof：用你的 agentKey 对 JoinProofMessage 签名（否则谁拿到公钥都能顶掉这一座）")
+	}
+	if !verifyJoinProof(pub, in.Ref, in.Card, in.Nonce, in.Proof) {
+		return nil, newOpErr(401, "bad_proof", "join 证明验不过：proof 必须是用这把 agentKey 签的")
 	}
 
 	rc.mu.Lock()
@@ -1293,7 +1308,7 @@ func (h *Host) Join(ctx context.Context, in JoinReq) (*JoinResp, error) {
 		}
 		if in.DryRun {
 			return &JoinResp{Joined: false, Status: "consent_required", Consent: consent,
-				Head: HeadView{I: len(rc.log.committedOps()), H: rc.log.head()}}, nil
+				Head: HeadView{I: rc.log.count(), H: rc.log.head()}}, nil
 		}
 	}
 	_ = caps
@@ -1303,7 +1318,7 @@ func (h *Host) Join(ctx context.Context, in JoinReq) (*JoinResp, error) {
 		return &JoinResp{
 			Joined: true, Status: "already_joined", AgentID: s.AgentID, Alias: s.Alias, Token: s.Token,
 			Duplicate: true, Caps: s.Caps,
-			Head:  HeadView{I: len(rc.log.committedOps()), H: rc.log.head()},
+			Head:  HeadView{I: rc.log.count(), H: rc.log.head()},
 			State: rc.snap.State,
 		}, nil
 	}
@@ -1352,7 +1367,7 @@ func (h *Host) Join(ctx context.Context, in JoinReq) (*JoinResp, error) {
 			return &JoinResp{
 				Joined: true, Status: "reclaimed", AgentID: prev.AgentID, Alias: prev.Alias,
 				Token: prev.Token, Reclaimed: true, Caps: prev.Caps,
-				Head:  HeadView{I: len(rc.log.committedOps()), H: rc.log.head()},
+				Head:  HeadView{I: rc.log.count(), H: rc.log.head()},
 				State: rc.snap.State,
 			}, nil
 		}
@@ -1362,21 +1377,47 @@ func (h *Host) Join(ctx context.Context, in JoinReq) (*JoinResp, error) {
 			return nil, toOpErr(rerr)
 		}
 	}
-	// uses 校验：这张卡还能不能再进一个
-	iv := rc.inv[inviteID]
-	if iv == nil {
-		return nil, newOpErr(404, "invite_unknown", "这张卡的 inviteId 不在本场会的签发记录里")
+	// 卡的自证（§10.1②③）：卡里写的东西必须和宿主签发记录对得上，否则卡上的
+	// uses/seats 只是展示值，"A 偷偷多发卡"就查不出来。同时按 ids 全量兑现：
+	// 一卡多 id 的卡不该只有第一张能用。
+	if len(card.P.IDs) == 0 {
+		return nil, newOpErr(400, "card_no_ids", "卡里没有任何 inviteId")
 	}
-	used := 0
-	for _, s := range rc.seats {
-		// 认回失败后的兜底新座位：如果这一座本来就用同一张卡，别再算一次它的占用
-		// （否则"一次性卡 + 刚崩过"会直接撞 invite_exhausted）。
-		if s.InviteID == inviteID && s != prevSeat {
-			used++
+	sumUses := 0
+	for _, id := range card.P.IDs {
+		rec := rc.inv[id]
+		if rec == nil {
+			return nil, newOpErr(404, "invite_unknown", "卡里的 inviteId 不在本场会的签发记录里："+id)
+		}
+		sumUses += rec.Uses
+	}
+	if card.P.Uses != sumUses {
+		return nil, newOpErr(409, "card_uses_mismatch",
+			fmt.Sprintf("卡声明 %d 个席位，但对应邀请记录合计 %d 个", card.P.Uses, sumUses))
+	}
+	if card.P.Seats != rc.snap.MaxAgents {
+		return nil, newOpErr(409, "card_seats_mismatch",
+			fmt.Sprintf("卡声明会场 %d 人，与这场会的 %d 人不符", card.P.Seats, rc.snap.MaxAgents))
+	}
+
+	// 从第一个还有余额的 id 上落座
+	var iv *inviteRec
+	for _, id := range card.P.IDs {
+		used := 0
+		for _, s := range rc.seats {
+			// 认回失败后的兜底新座位：这一座本来就用同一张卡，别再算一次它的占用
+			// （否则"一次性卡 + 刚崩过"会直接撞 invite_exhausted）。
+			if s.InviteID == id && s != prevSeat {
+				used++
+			}
+		}
+		if rec := rc.inv[id]; rec != nil && used < rec.Uses {
+			iv, inviteID = rec, id
+			break
 		}
 	}
-	if used >= iv.Uses {
-		return nil, newOpErr(409, "invite_exhausted", fmt.Sprintf("这张卡的 %d 个座位已用完（每张卡都是可数的）", iv.Uses))
+	if iv == nil {
+		return nil, newOpErr(409, "invite_exhausted", "这张卡的可进场人数已用完（每张卡都是可数的）")
 	}
 	if rc.snap.State != domain.StateBriefing && rc.snap.State != domain.StateDebating {
 		return nil, newOpErr(410, "room_started", "会议已开始，不再接受新参会者")
@@ -1436,7 +1477,7 @@ func (h *Host) Join(ctx context.Context, in JoinReq) (*JoinResp, error) {
 	return &JoinResp{
 		Joined: true, AgentID: res.AgentID, Alias: alias, Token: res.AgentToken,
 		IsModerator: res.IsModerator, Caps: seat.Caps,
-		Head:    HeadView{I: len(rc.log.committedOps()), H: rc.log.head()},
+		Head:    HeadView{I: rc.log.count(), H: rc.log.head()},
 		State:   rc.snap.State,
 		KeyFile: h.cfg.SeatPath(rc.ref), Receipts: h.cfg.ReceiptsPath(rc.ref),
 	}, nil
@@ -1521,8 +1562,10 @@ func (h *Host) applyOnSeat(ctx context.Context, rc *roomCtx, s *seat, kind strin
 		return nil, nil, newOpErr(403, "capability_denied", reason)
 	}
 	// 幂等：同 (agent,kind,opKey) 只生效一次（G8）。
+	// 幂等只在**成功**之后登记（见下面的 commit），所以命中即代表那次真的生效过。
+	// 之前失败也登记，重放会拿到 200 + 空 result，客户端以为成功就不再重发 → 发言静默丢失。
 	if req.OpKey != "" {
-		if cr, ok := rc.log.lookupIdem(s.AgentID, kind, req.OpKey); ok {
+		if cr, ok := rc.log.lookupIdem(s.AgentID, kind, req.OpKey); ok && cr.OK {
 			var res any
 			if len(cr.Res) > 0 {
 				_ = json.Unmarshal(cr.Res, &res)
@@ -1777,4 +1820,22 @@ func (h *Host) authByToken(token string) (*roomCtx, *seat, error) {
 	cp := *orig
 	cp.Caps = append([]string{}, orig.Caps...)
 	return rc, &cp, nil
+}
+
+// JoinProofMessage 是 join 证明的签名域（卡或 ref 二选一，都参与，避免串场）。
+func JoinProofMessage(refOrCard, nonce string) []byte {
+	return []byte("agchat-join:v1\x00" + refOrCard + "\x00" + nonce)
+}
+
+// verifyJoinProof 用 agentPub 验 join 证明。
+func verifyJoinProof(pub ed25519.PublicKey, ref, card, nonce, proofB64 string) bool {
+	sig, err := b64url.DecodeString(proofB64)
+	if err != nil || len(sig) != ed25519.SignatureSize {
+		return false
+	}
+	target := ref
+	if card != "" {
+		target = card
+	}
+	return ed25519.Verify(pub, JoinProofMessage(target, nonce), sig)
 }

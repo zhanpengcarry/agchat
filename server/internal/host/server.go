@@ -3,6 +3,7 @@ package host
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -317,7 +318,7 @@ func (h *Host) head(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rc.mu.Lock()
-	head := HeadView{I: len(rc.log.committedOps()), H: rc.log.head()}
+	head := HeadView{I: rc.log.count(), H: rc.log.head()}
 	rc.mu.Unlock()
 	writeJSONResp(w, 200, map[string]any{
 		"ref": rc.ref, "head": head, "agentId": s.AgentID,
@@ -387,8 +388,15 @@ func (h *Host) healthz(w http.ResponseWriter, r *http.Request) {
 
 func decodeBody(r *http.Request, v any) error {
 	defer func() { _, _ = r.Body.Close(), 0 }()
-	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, 4<<20))
+	const maxBody = 4 << 20
+	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, maxBody))
 	if err := dec.Decode(v); err != nil {
+		// 超长和"不是 JSON"要分开：前者删几个字段就行，后者是写错了，
+		// 混成一个 400 会让人往错的方向查。
+		var tooBig *http.MaxBytesError
+		if errors.As(err, &tooBig) {
+			return newOpErr(413, "body_too_large", fmt.Sprintf("请求体超过 %d 字节上限", maxBody))
+		}
 		return newOpErr(400, "bad_json", "请求体不是合法 JSON: "+err.Error())
 	}
 	return nil
@@ -432,13 +440,25 @@ func (h *Host) Next(ctx context.Context, token string, wait time.Duration) (*Nex
 	if err != nil {
 		return nil, err
 	}
-	snap, err := h.eng.Inbox(ctx, TenantID, rc.roomID, tokenHashOf(s), nil, wait)
+	// 长轮询的游标必须是**上次给出去的那个事件序号**。传 nil 时引擎会立刻返回
+	// （ops.go:410），wait 等于白给，agent 只能自己空转重试。
+	rc.mu.Lock()
+	var cur int64
+	if sp := rc.seats[s.AgentID]; sp != nil {
+		cur = sp.Cursor
+	}
+	rc.mu.Unlock()
+	snap, err := h.eng.Inbox(ctx, TenantID, rc.roomID, tokenHashOf(s), &cur, wait)
 	if err != nil {
 		return nil, err
 	}
 	rc.mu.Lock()
+	if sp := rc.seats[s.AgentID]; sp != nil && snap.Cursor > sp.Cursor {
+		sp.Cursor = snap.Cursor
+		rc.dirty = true
+	}
 	err = h.syncLocked(ctx, rc, before)
-	head := HeadView{I: len(rc.log.committedOps()), H: rc.log.head()}
+	head := HeadView{I: rc.log.count(), H: rc.log.head()}
 	if rc.dirty {
 		h.persist(rc)
 	}

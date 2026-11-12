@@ -31,6 +31,7 @@ const (
 	exitUsage     = 2
 	exitConsent   = 3 // join 没带 --yes：需确认，未进场（pm P1 / AC2）
 	exitWrongRoom = 4 // 第三类失败：这是另一场会的卡（docs/09 §2.4）
+	exitAuth      = 5 // 座位凭据已失效，且本机有私钥可以认回（脚本据此走 join --ref）
 )
 
 var b64 = base64.RawURLEncoding
@@ -119,6 +120,25 @@ type apiError struct {
 }
 
 func (e *apiError) Error() string { return e.Msg }
+
+// isAuthErr 判断是不是"凭证层面的失败"（而不是业务拒绝）。
+//
+// 用途只有一个：把这些失败翻译成"用私钥认回"的下一步提示。业务类拒绝
+// （不在你轮次、预算花完、方案超限）不该被误当成凭证问题。
+func isAuthErr(err error) bool {
+	var ae *apiError
+	if !errors.As(err, &ae) {
+		return false
+	}
+	if ae.Status == 401 {
+		return true
+	}
+	switch ae.Code {
+	case "bad_token", "token_required", "seat_unknown":
+		return true
+	}
+	return false
+}
 
 // healthz 探活（/healthz 不含任何会议数据）。
 func healthz(addr string) bool {

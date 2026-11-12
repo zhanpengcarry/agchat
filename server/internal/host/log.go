@@ -286,3 +286,11 @@ func (l *opLog) appendLine(line []byte) error {
 
 // committedOps 返回导出用的已提交前缀（含 reject，它们的 ok=false）。
 func (l *opLog) committedOps() []oplog.Op { return l.opsCopy() }
+
+// count 只报条数。每个响应都要拼 Head，之前一律用 len(committedOps())，
+// 等于每次请求都把整条日志复制一遍（300 条 op 时有 300 个结构体的无谓分配）。
+func (l *opLog) count() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return len(l.ops)
+}

@@ -29,6 +29,9 @@ func cmdRoom(args []string) int {
 	switch args[0] {
 	case "new":
 		return cmdRoomNew(args[1:])
+	case "list":
+		// 等价于不带 --ref 的 status：本机所有房间一行一个。
+		return cmdRoomStatus(args[1:])
 	case "status":
 		return cmdRoomStatus(args[1:])
 	case "close":
@@ -81,7 +84,7 @@ func cmdRoomNew(args []string) int {
 	cardOK := true
 	if err := c.do("POST", "/v1/invite", host.IssueReq{Ref: res.Ref, Uses: res.Seats}, &card); err != nil {
 		cardOK = false
-		fmt.Fprintf(os.Stderr, "提示：自动发卡失败（%v），请手手动跑agchat invite --ref %s\n", err, res.Ref)
+		fmt.Fprintf(os.Stderr, "提示：自动发卡失败（%v），请手动跑 agchat invite --ref %s\n", err, res.Ref)
 	}
 	if *jsonOut {
 		out := map[string]any{
@@ -128,7 +131,7 @@ func hostOrDead(cfg host.Config, ref string) (string, int) {
 
 func cmdRoomStatus(args []string) int {
 	fs := newFlags("room status")
-	ref := fs.String("ref", "", "房间 ref（省略 = = 本 homehome 全部房间间）")
+	ref := fs.String("ref", "", "房间 ref（省略 = 本 home 全部房间）")
 	jsonOut := fs.Bool("json", false, "stdout 只输出一行 JSON")
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
@@ -138,7 +141,7 @@ func cmdRoomStatus(args []string) int {
 	if strings.TrimSpace(*ref) == "" {
 		r, err := host.ReadHomeRendezvous(cfg)
 		if err != nil || !healthz(r.Addr) {
-			return fail("宿主没在跑，也没有指定 --ref")
+			return fail("本机没有在跑的宿主（room new 会起一个；重启过机器的话用 room resume --ref <ref>）")
 		}
 		haddr = r.Addr
 	} else {
@@ -166,7 +169,7 @@ func cmdRoomStatus(args []string) int {
 			Addr  string             `json:"addr"`
 		}
 		if err := c.do("GET", "/v1/rooms", nil, &res); err != nil {
-			return fail("读状态失失败: %v %v", err)
+			return fail("读状态失败: %v", err)
 		}
 		if *jsonOut {
 			printJSON(res)
@@ -183,7 +186,7 @@ func cmdRoomStatus(args []string) int {
 	}
 	var st host.StatusResp
 	if err := c.do("GET", "/v1/status?ref="+*ref, nil, &st); err != nil {
-		return fail("读状态失失败: %v %v", err)
+		return fail("读状态失败: %v", err)
 	}
 	if *jsonOut {
 		printJSON(st)
@@ -346,6 +349,10 @@ func cmdJoin(args []string) int {
 	if err != nil {
 		return fail("%s", invite.HumanError(err))
 	}
+	// 过期只在本地**提示**：exp 是没签名的字段，宿主验签后才是权威判定（A17/A3）。
+	if err := invite.CheckJoinBy(crd); err != nil {
+		fmt.Fprintf(os.Stderr, "提示：%s（以宿主判定为准）\n", invite.HumanError(err))
+	}
 	// 第三类失败（docs/09 §2.4）：验签能过，但 ref 与当前会话不符。
 	if strings.TrimSpace(*expectRef) != "" && *expectRef != crd.P.Ref {
 		fmt.Fprintln(os.Stderr, invite.HumanWrongRoom)
@@ -396,8 +403,9 @@ func cmdJoin(args []string) int {
 
 	c := newClient(endpoint, "")
 	var jr host.JoinResp
+	proof := b64.EncodeToString(ed25519.Sign(priv, host.JoinProofMessage(text, nonce)))
 	if err := c.do("POST", "/v1/join", host.JoinReq{
-		Card: text, AgentPub: b64.EncodeToString(pub), Nonce: nonce,
+		Card: text, AgentPub: b64.EncodeToString(pub), Nonce: nonce, Proof: proof,
 		Alias: *as, Model: *model, DryRun: !*yes,
 	}, &jr); err != nil {
 		return fail("%v", err)
@@ -440,7 +448,7 @@ func cmdJoin(args []string) int {
 		Caps: jr.Caps, Endpoint: endpoint, JoinedAt: nowMS(),
 	}
 	if err := saveSeat(cfg, sc); err != nil {
-		return fail("写座位凭据失失败: %v %v", err)
+		return fail("写座位凭据失败: %v", err)
 	}
 	if *jsonOut {
 		printJSON(map[string]any{
@@ -473,7 +481,7 @@ func reclaimByRef(cfg host.Config, ref, as, model string, jsonOut bool) int {
 	}
 	priv, err := b64.DecodeString(sc.AgentPriv)
 	if err != nil || len(priv) != ed25519.PrivateKeySize {
-		return fail("座位凭据里的私钥坏了坏了：%ss", cfg.SeatPath(ref))
+		return fail("座位凭据里的私钥坏了：%s", cfg.SeatPath(ref))
 	}
 	nonceBytes := make([]byte, invite.NonceBytes)
 	if _, err := rand.Read(nonceBytes); err != nil {
@@ -481,8 +489,9 @@ func reclaimByRef(cfg host.Config, ref, as, model string, jsonOut bool) int {
 	}
 	c := newClient(sc.Endpoint, "")
 	var res host.JoinResp
+	proof := b64.EncodeToString(ed25519.Sign(ed25519.PrivateKey(priv), host.JoinProofMessage(ref, b64.EncodeToString(nonceBytes))))
 	err = c.do("POST", "/v1/join", host.JoinReq{
-		Ref: ref, AgentPub: sc.AgentPub, Nonce: b64.EncodeToString(nonceBytes),
+		Ref: ref, AgentPub: sc.AgentPub, Nonce: b64.EncodeToString(nonceBytes), Proof: proof,
 		Alias: firstNonEmpty(as, sc.Alias), Model: model,
 	}, &res)
 	if err != nil {
@@ -497,7 +506,7 @@ func reclaimByRef(cfg host.Config, ref, as, model string, jsonOut bool) int {
 		sc.AgentID = res.AgentID
 	}
 	if err := saveSeat(cfg, sc); err != nil {
-		return fail("写座位凭据失失败: %v %v", err)
+		return fail("写座位凭据失败: %v", err)
 	}
 	if jsonOut {
 		printJSON(map[string]any{
@@ -522,7 +531,7 @@ func firstNonEmpty(a, b string) string {
 func cmdNext(args []string) int {
 	fs := newFlags("next")
 	ref := fs.String("ref", "", "房间 ref")
-	wait := fs.Int("wait", 20, "长轮询最多等多少秒（0 = 立即返回返回）")
+	wait := fs.Int("wait", 20, "长轮询最多等多少秒（0 = 立即返回）")
 	jsonOut := fs.Bool("json", false, "stdout 只输出一行 JSON")
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
@@ -539,6 +548,15 @@ func cmdNext(args []string) int {
 	c := newClient(sc.Endpoint, sc.Token)
 	var res host.NextResp
 	if err := c.do("GET", fmt.Sprintf("/v1/next?wait=%d", *wait), nil, &res); err != nil {
+		// token 作废（宿主重启、座位被认回、租约过期）时，最有用的一句话是「怎么回来」，
+		// 而不是把 401 原样抛给 agent——它只会去猜。
+		if isAuthErr(err) {
+			fmt.Fprintf(os.Stderr, "座位凭据已失效：%v\n", err)
+			fmt.Fprintf(os.Stderr, "用这张座位自己的私钥认回（不占新座位、不用再要卡）：\n  agchat join --ref %s --yes\n", r)
+			if fileExists(cfg.SeatPath(r)) {
+				return exitAuth
+			}
+		}
 		return fail("%v", err)
 	}
 	if *jsonOut {
@@ -789,7 +807,7 @@ func cmdSummary(args []string) int {
 		return map[string]any{"agentId": sc.AgentID, "alias": sc.Alias, "text": *text}
 	})
 	if err != nil {
-		return fail("写概述失失败: %v %v", err)
+		return fail("写概述失败: %v", err)
 	}
 	var sr struct {
 		OK     bool   `json:"ok"`
@@ -824,7 +842,7 @@ func cmdResult(args []string) int {
 	c := newClient(sc.Endpoint, sc.Token)
 	var raw json.RawMessage
 	if err := c.do("GET", "/v1/result", nil, &raw); err != nil {
-		return fail("读结论失失败: %v %v", err)
+		return fail("读结论失败: %v", err)
 	}
 	if *jsonOut {
 		fmt.Println(string(raw))
@@ -875,13 +893,13 @@ func cmdExport(args []string) int {
 	defer func() { _ = resp.Body.Close() }()
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fail("读导出内容失失败: %v %v", err)
+		return fail("读导出内容失败: %v", err)
 	}
 	if resp.StatusCode >= 400 {
 		return fail("导出失败（HTTP %d（HTTP %d）: %s %s", resp.StatusCode, strings.TrimSpace(string(data)))
 	}
 	if err := os.WriteFile(*out, data, 0o644); err != nil {
-		return fail("写文件失失败: %v %v", err)
+		return fail("写文件失败: %v", err)
 	}
 	fmt.Printf("bundle: %s\n", absPath(*out))
 	fmt.Printf("ops: %d\n", countOpsInBundle(data))
