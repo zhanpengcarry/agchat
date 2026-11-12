@@ -1243,10 +1243,72 @@ func (e *Engine) ResultFor(agg *Agg) *Result {
 // 推进轮次。本地宿主上任何人发一个无凭证 GET 就能替别人弃权，这是 R-7 明令禁止的。
 // 宿主的所有只读端点（result / status / head）都必须走这里。
 func (e *Engine) PeekReadOnly(ctx context.Context, tenantID, roomID string, fn func(agg *Agg) error) error {
-	return e.Do(ctx, tenantID, roomID, func(agg *Agg, _ *store.Tx) (bool, error) {
-		// 返回 false = 不落库；fn 的错误原样上抛（*domain.Error 会被 runLocked 原样带回）。
-		return false, fn(agg)
+	return e.peek(ctx, tenantID, roomID, false, fn)
+}
+
+// peek 是只读读取的公共骨架：走只读事务、按 rt 锁串行，不 tick、不落库。
+func (e *Engine) peek(ctx context.Context, tenantID, roomID string, light bool, fn func(agg *Agg) error) error {
+	rt := e.runtimeFor(tenantID, roomID)
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	return e.store.ReadOnly(ctx, tenantID, func(tx *store.Tx) error {
+		var (
+			agg *Agg
+			err error
+		)
+		if light {
+			agg, err = loadAggLight(tx, roomID)
+		} else {
+			agg, err = loadAgg(tx, roomID)
+		}
+		if err != nil {
+			return err
+		}
+		return fn(agg)
 	})
+}
+
+// PeekLight 与 PeekReadOnly 相同，但**不读消息正文与方案正文**：
+// 给"只要状态与计数"的路径用（宿主的快照刷新）。
+func (e *Engine) PeekLight(ctx context.Context, tenantID, roomID string, fn func(agg *Agg) error) error {
+	return e.peek(ctx, tenantID, roomID, true, fn)
+}
+
+// StatusSnapshot 是状态页要用的轻量数据：没有消息正文，也没有方案全文。
+//
+// 为什么单独一条路径：状态页是最高频的读，而"完整载入聚合"要把所有消息读进内存，
+// 6 人 10 轮之后光解析就占掉大部分时间与分配。
+type StatusSnapshot struct {
+	Room   *domain.Room
+	Agents []*domain.Agent
+	Votes  []*domain.Vote
+	Counts store.RoomCounts
+}
+
+// PeekStatus 只读、不 tick、不落库，读的量刚好够画状态页。
+func (e *Engine) PeekStatus(ctx context.Context, tenantID, roomID string) (*StatusSnapshot, error) {
+	var out *StatusSnapshot
+	err := e.store.ReadOnly(ctx, tenantID, func(tx *store.Tx) error {
+		r, err := tx.GetRoom(roomID)
+		if err != nil {
+			return err
+		}
+		agents, err := tx.ListAgents(roomID)
+		if err != nil {
+			return err
+		}
+		votes, err := tx.ListVotes(roomID)
+		if err != nil {
+			return err
+		}
+		counts, err := tx.RoomCounts(roomID)
+		if err != nil {
+			return err
+		}
+		out = &StatusSnapshot{Room: r, Agents: agents, Votes: votes, Counts: counts}
+		return nil
+	})
+	return out, err
 }
 
 // BuildResultForVerify 是给离线验签用的**纯聚合出口**（arch B-12 / docs/09 §6）。

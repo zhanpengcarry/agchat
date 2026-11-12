@@ -53,7 +53,10 @@ func buildDSN(dsn string) string {
 	if strings.Contains(dsn, "?") {
 		sep = "&"
 	}
-	extra := sep + "_pragma=busy_timeout(5000)&_txlock=immediate"
+	// synchronous=NORMAL：WAL 下的推荐档。默认 FULL 会在每个事务提交时 fsync，
+	// 而这里每条业务 op 都是一个事务 —— 一次发言要等好几次刷盘。
+	// 换来的是"掉电最多丢最后一两条 op"，不会损坏库；配合 op 日志已经够用。
+	extra := sep + "_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)&_pragma=cache_size(-1024)&_txlock=immediate"
 	if strings.Contains(dsn, "mode=memory") || strings.Contains(dsn, ":memory:") {
 		// 内存库不支持 WAL
 		return dsn + extra + "&_pragma=journal_mode(MEMORY)"

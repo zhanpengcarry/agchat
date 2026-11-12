@@ -291,6 +291,8 @@ type Agg struct {
 	pendingMsgs []*domain.Message
 	dirtyProps  map[string]bool
 	dirtyVotes  map[string]bool
+	// origAgents 是载入时的座位原值：保存时逐字段比，没变的不写。
+	origAgents map[string]domain.Agent
 }
 
 func (a *Agg) AgentByID(id string) *domain.Agent {
@@ -457,14 +459,52 @@ func loadAgg(tx *store.Tx, roomID string) (*Agg, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Agg{Room: r, Agents: agents, Messages: msgs, Proposals: props, Votes: votes}, nil
+	agg := &Agg{Room: r, Agents: agents, Messages: msgs, Proposals: props, Votes: votes, origAgents: map[string]domain.Agent{}}
+	for _, a := range agents {
+		agg.origAgents[a.ID] = *a
+	}
+	return agg, nil
 }
 
+// loadAggLight 与 loadAgg 相同，但**不读消息正文、不读方案正文**：
+// 只给快照类读取用（那里只需要计数）。方案位置用占位 nil 填，长度是对的。
+func loadAggLight(tx *store.Tx, roomID string) (*Agg, error) {
+	r, err := tx.GetRoom(roomID)
+	if err != nil {
+		return nil, err
+	}
+	agents, err := tx.ListAgents(roomID)
+	if err != nil {
+		return nil, err
+	}
+	votes, err := tx.ListVotes(roomID)
+	if err != nil {
+		return nil, err
+	}
+	counts, err := tx.RoomCounts(roomID)
+	if err != nil {
+		return nil, err
+	}
+	agg := &Agg{
+		Room: r, Agents: agents, Votes: votes,
+		Proposals:  make([]*domain.Proposal, counts.Proposals),
+		origAgents: map[string]domain.Agent{},
+	}
+	for _, a := range agents {
+		agg.origAgents[a.ID] = *a
+	}
+	return agg, nil
+}
 func saveAgg(tx *store.Tx, a *Agg) error {
 	if err := tx.SaveRoom(a.Room); err != nil {
 		return err
 	}
+	// 只写"改动过"的座位：每个 op 都整表重写全部 agent，6 人时会话就要 6 次 UPDATE/op，
+	// 而绝大多数 op（发言、投票）只动自己那一行（LastSeenAt / ReadCursor / Tokens*）。
 	for _, ag := range a.Agents {
+		if orig, ok := a.origAgents[ag.ID]; ok && orig == *ag {
+			continue // 没变就不写
+		}
 		if err := tx.SaveAgent(ag); err != nil {
 			return err
 		}
@@ -503,12 +543,27 @@ func (e *Engine) Do(ctx context.Context, tenantID, roomID string,
 
 func (e *Engine) runLocked(ctx context.Context, tenantID, roomID string, rt *runtime,
 	fn func(agg *Agg, tx *store.Tx) (bool, error)) error {
+	return e.runLockedOpt(ctx, tenantID, roomID, rt, false, fn)
+}
+
+// runLockedOpt 的 light=true 表示"不要消息正文"：快照类读取只看计数与状态，
+// 把最贵的那张表省掉（read: false 也不落库）。
+func (e *Engine) runLockedOpt(ctx context.Context, tenantID, roomID string, rt *runtime, light bool,
+	fn func(agg *Agg, tx *store.Tx) (bool, error)) error {
 
 	var bizErr error
 	changed := false
 
 	err := e.store.WithTenant(ctx, tenantID, func(tx *store.Tx) error {
-		agg, err := loadAgg(tx, roomID)
+		var (
+			agg *Agg
+			err error
+		)
+		if light {
+			agg, err = loadAggLight(tx, roomID)
+		} else {
+			agg, err = loadAgg(tx, roomID)
+		}
 		if err != nil {
 			return err
 		}

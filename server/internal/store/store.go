@@ -125,6 +125,27 @@ func (s *Store) WithTenant(ctx context.Context, tenantID string, fn func(*Tx) er
 	return tx.Commit()
 }
 
+// ReadOnly 与 WithTenant 相同，但开的是**只读事务**（不开写锁、不 fsync）。
+//
+// 为什么单独一条：快照类读取（状态、head、结果预览）在每次请求里都会发生，
+// 而 WithTenant 走的是 BEGIN IMMEDIATE，一次只读也要付写锁与提交的钱。
+// 只读路径最后一定 Rollback —— 它本来就没有要提交的东西。
+func (s *Store) ReadOnly(ctx context.Context, tenantID string, fn func(*Tx) error) error {
+	if strings.TrimSpace(tenantID) == "" {
+		return errors.New("store: 空 tenantID —— 拒绝在无租户作用域下访问业务表")
+	}
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return err
+	}
+	t := &Tx{ctx: ctx, tx: tx, tenantID: tenantID}
+	if err := fn(t); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Rollback()
+}
+
 // NewTenant 建一个匿名租户，返回 tenantId。
 //
 // 这是**唯一**允许在租户作用域之外写入的语句：tenants 表本身就是租户，
@@ -705,4 +726,35 @@ func decodePlan(s string) (*domain.Plan, error) {
 		return nil, err
 	}
 	return &p, nil
+}
+
+// RoomCounts 是"只要数字"的轻量视图：状态页/巡检用，不必把全部消息读进内存。
+//
+// 一次走三条带 tenant 前缀的计数查询 + 房间行，比完整载入聚合少一个数量级的分配。
+type RoomCounts struct {
+	Messages  int
+	Proposals int
+	Votes     int
+}
+
+func (t *Tx) RoomCounts(roomID string) (RoomCounts, error) {
+	var c RoomCounts
+	rows := []struct {
+		q   string
+		dst *int
+	}{
+		{`SELECT COUNT(*) FROM messages WHERE tenant_id = ? AND room_id = ?`, &c.Messages},
+		{`SELECT COUNT(*) FROM proposals WHERE tenant_id = ? AND room_id = ?`, &c.Proposals},
+		{`SELECT COUNT(*) FROM votes WHERE tenant_id = ? AND room_id = ?`, &c.Votes},
+	}
+	for _, r := range rows {
+		row, err := t.queryRow(r.q, t.tenantID, roomID)
+		if err != nil {
+			return c, err
+		}
+		if err := row.Scan(r.dst); err != nil {
+			return c, err
+		}
+	}
+	return c, nil
 }

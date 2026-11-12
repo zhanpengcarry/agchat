@@ -1,6 +1,7 @@
 package host
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"agchat/internal/domain"
@@ -98,6 +100,8 @@ func portOf(addr string) string {
 	return ""
 }
 
+var bufPool = sync.Pool{New: func() any { return new(bytes.Buffer) }}
+
 // ---- 统一响应 --------------------------------------------------------------
 
 func writeJSONResp(w http.ResponseWriter, status int, v any) {
@@ -106,9 +110,14 @@ func writeJSONResp(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("x-content-type-options", "nosniff")
 	// ★ 故意不写 access-control-allow-origin（arch A-24）。
 	w.WriteHeader(status)
-	enc := json.NewEncoder(w)
+	buf := bufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	enc := json.NewEncoder(buf)
 	enc.SetEscapeHTML(false)
-	_ = enc.Encode(v)
+	if err := enc.Encode(v); err == nil {
+		_, _ = w.Write(buf.Bytes())
+	}
+	bufPool.Put(buf)
 }
 
 func writeErr(w http.ResponseWriter, err error) {
@@ -312,12 +321,9 @@ func (h *Host) head(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// 客户端要拿 state/round/seq 一起签名（post 载荷要带 round 与 seq）。
-	snap, err := h.peek(r.Context(), rc)
-	if err != nil {
-		writeErr(w, toOpErr(err))
-		return
-	}
+	// 这些都在内存快照里：head 是每次发 op 前的必经调用，不该为它读一次整库。
 	rc.mu.Lock()
+	snap := rc.snap
 	head := HeadView{I: rc.log.count(), H: rc.log.head()}
 	rc.mu.Unlock()
 	writeJSONResp(w, 200, map[string]any{
