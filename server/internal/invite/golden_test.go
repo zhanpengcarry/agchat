@@ -145,6 +145,17 @@ func runGolden(t *testing.T, gc goldenCase) {
 		}
 		t.Fatalf("%s 期望 VerifyRoom 失败，实际通过", gc.Case)
 	}
+
+	// joinby 是验签之后的第四步：exp 没签名，只有签验过了它才可信（A3）。
+	if stage == "joinby" {
+		if jerr := CheckJoinBy(card); jerr != nil {
+			fail("joinby", jerr)
+			return
+		}
+		if gc.Expect == "fail" {
+			t.Fatalf("%s 期望 CheckJoinBy 失败，实际通过", gc.Case)
+		}
+	}
 }
 
 // ───────────────────────── 黄金向量生成器 ─────────────────────────

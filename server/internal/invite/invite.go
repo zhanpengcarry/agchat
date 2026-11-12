@@ -69,9 +69,11 @@ const (
 
 // §2.4 的三句人话（原样字符串，禁止改写）。
 const (
-	HumanTruncated    = "卡不完整：转发时被截断了。请让对方把 begin/end 之间的整段重发一次。"
-	HumanBadSignature = "卡对不上：内容被改过，或不是这台主机的签发卡。不要用它。"
-	HumanWrongRoom    = "这是另一场会的卡。"
+	HumanTruncated     = "卡不完整：转发时被截断了。请让对方把 begin/end 之间的整段重发一次。"
+	HumanMultiMachine  = "卡里有不止一段机读块：请让对方只发一张卡（人读块可以留着）。"
+	HumanTopicMismatch = "卡里人读块写的议题和机读块对不上：人读块被改过，把整张卡发出来让对方核对。"
+	HumanBadSignature  = "卡对不上：内容被改过，或不是这台主机的签发卡。不要用它。"
+	HumanWrongRoom     = "这是另一场会的卡。"
 )
 
 // HumanExpired 是规格 §2.4 三句之外唯一新增的一句（joinBy 过期）。
@@ -98,6 +100,10 @@ var (
 	ErrRulesMismatch = fmt.Errorf("%w: 规则版本不一致", ErrWrongRoom)
 	// ErrExpired：joinBy 已过（只由 ParseAt 判定；宿主权威）。
 	ErrExpired = errors.New("invite: 卡已过 joinBy")
+	// ErrMultiMachine：一张卡里塞了多段机读块（A1）。
+	ErrMultiMachine = errors.New("invite: 卡里有多段机读块")
+	// ErrHumanTopic：人读块里的议题与签进 payload 的 th 不符（A2）。
+	ErrHumanTopic = errors.New("invite: 人读块的议题与机读块不符")
 	// ErrInvalidPayload：签发侧入参不合法（不会出现在解析路径上）。
 	ErrInvalidPayload = errors.New("invite: payload 不合法")
 )
@@ -114,7 +120,7 @@ const (
 
 // Endpoint 是卡里的直连端点（S1 直连档）。
 //
-// K 是闭枚枚举 loopback|lan|tunnel；k=="lan" 必须带 INS:1（明文入站标记，§10.1⑥ / G11）。
+// K 是闭合枚举 loopback|lan|tunnel；k=="lan" 必须带 INS:1（明文入站标记，§10.1⑥ / G11）。
 type Endpoint struct {
 	K   string `json:"k"`
 	U   string `json:"u"`
@@ -160,10 +166,16 @@ type Payload struct {
 
 // Card 是解析结果。RawPayload 是**收到的原始字节**，验签只用它（arch A-1）。
 type Card struct {
-	P          Payload
-	RawPayload []byte
-	Sig        []byte
-	Text       string
+	// 下面三个字段是"命中但还没裁决"的状态：它们说的都是**没签名**的字段，
+	// 必须等 Verify 验签通过再定性。否则改一个字节就会被报成"另一版规则办的会"
+	// 或"卡过期了"，而不是"卡对不上，内容被改过"（docs/09 §2.4 的顺序）。
+	ruleMismatch bool
+	joinBy       int64
+	nowMillis    int64
+	P            Payload
+	RawPayload   []byte
+	Sig          []byte
+	Text         string
 }
 
 // payloadKeys 是 payload 的闭枚键集：出现任何别的键 → fail closed。
@@ -188,8 +200,13 @@ func Issue(p Payload, priv ed25519.PrivateKey) (machineBlock string, err error) 
 	if len(priv) != ed25519.PrivateKeySize {
 		return "", fmt.Errorf("%w: 私钥长度 %d", ErrInvalidPayload, len(priv))
 	}
+	// 签发侧依旧是权威校验：签出去的卡不许自带错的 rv。
 	if err := checkPayload(p); err != nil {
 		return "", fmt.Errorf("%w: %s", ErrInvalidPayload, err.Error())
+	}
+	if p.RV.Res != RulesVersion || p.RV.Vote != RulesVersion || p.RV.Hash != RulesVersion {
+		return "", fmt.Errorf("%w: rv={res:%d,vote:%d,hash:%d}，本机支持 {res:%d,vote:%d,hash:%d}",
+			ErrInvalidPayload, p.RV.Res, p.RV.Vote, p.RV.Hash, RulesVersion, RulesVersion, RulesVersion)
 	}
 	raw, err := oplog.CanonicalJSON(p)
 	if err != nil {
@@ -275,6 +292,9 @@ func parseWith(text string, nowMillis int64) (*Card, error) {
 	if err != nil {
 		return nil, err
 	}
+	if len(payloadSeg) > 4096 {
+		return nil, fmt.Errorf("%w: payload 段 %d 字符（上限 4096）", ErrTruncated, len(payloadSeg))
+	}
 	raw, err := decodeB64(payloadSeg)
 	if err != nil || len(raw) == 0 {
 		return nil, fmt.Errorf("%w: payload 段解不出来（%d 字符）", ErrTruncated, len(payloadSeg))
@@ -290,13 +310,19 @@ func parseWith(text string, nowMillis int64) (*Card, error) {
 	if err != nil {
 		return nil, err
 	}
+	// 结构/字段自洽（rv 与 joinBy 除外：它们没有签名，留给验签之后再定性，A3）。
 	if err := checkPayload(p); err != nil {
 		return nil, err
 	}
-	if err := checkJoinBy(p, nowMillis); err != nil {
-		return nil, err
+	// 人读块里的议题必须与 payload 的 th 对得上（§2.1 / A2）：机读块可以原样转发，
+	// 只改人读块里的议题，B 看到的就是另一件事。注：人读块没签名，所以这条只是
+	// "一眼能看出来的不一致"，真正的结论仍以验签为准。
+	if topic, ok := humanTopic(text); ok && TopicHash(topic) != p.TH {
+		return nil, fmt.Errorf("%w: 人读块说「%s」，与机读块的 th 对不上", ErrHumanTopic, topic)
 	}
-	return &Card{P: p, RawPayload: raw, Sig: sig, Text: text}, nil
+	c := &Card{P: p, RawPayload: raw, Sig: sig, Text: text, joinBy: p.Exp, nowMillis: nowMillis}
+	c.ruleMismatch = p.RV.Res != RulesVersion || p.RV.Vote != RulesVersion || p.RV.Hash != RulesVersion
+	return c, nil
 }
 
 // Verify 用**收到的原始字节**验签，并检查卡自洽（ref == RefOf(pub)、key == pub）。
@@ -324,6 +350,25 @@ func (c *Card) Verify(pub ed25519.PublicKey) error {
 	if want := RefOf(pub); c.P.Ref != want {
 		return fmt.Errorf("%w: 卡的 ref=%s，本主机 ref=%s", ErrWrongRoom, c.P.Ref, want)
 	}
+	// 规则版本与 joinBy 都写在**没签名**的字段里，所以只能等验签过了再定性（A3）。
+	// 顺序仍然是：先"卡对不上"，再"另一版规则"，最后"过期"。
+	if c.ruleMismatch {
+		return fmt.Errorf("%w: 卡 rv=%d/%d/%d 本实现=%d", ErrRulesMismatch,
+			c.P.RV.Res, c.P.RV.Vote, c.P.RV.Hash, RulesVersion)
+	}
+	return nil
+}
+
+// CheckJoinBy 判 joinBy 是否已过（调用方须先 Verify 过：过了验签，时间才可信）。
+//
+// 只在 ParseAt 给过 now 时有意义；Parse 出来的卡（now=0）这里一律放行。
+func CheckJoinBy(c *Card) error {
+	if c == nil || c.nowMillis == 0 || c.joinBy == 0 {
+		return nil
+	}
+	if c.nowMillis > c.joinBy {
+		return fmt.Errorf("%w: exp=%d now=%d", ErrExpired, c.joinBy, c.nowMillis)
+	}
 	return nil
 }
 
@@ -343,19 +388,28 @@ func VerifyRoom(c *Card, wantRef string) error {
 
 // extractMachine 取出机读块。两个 marker 任一缺失都算结构性失败（被截断）。
 func extractMachine(text string) (string, error) {
+	// marker 必须**恰好各一次**：否则"伪卡拼在真卡前面"会让整段真卡被静默丢掉，
+	// 而验签、ref 比对全程都能过（A1）。
+	nb := strings.Count(text, BeginMarker)
+	ne := strings.Count(text, EndMarker)
+	switch {
+	case nb == 0 && ne == 0:
+		// 没有 marker：整段当机读块（用户只粘了一行 v1:... 的情况）。
+		if n := strings.Count(text, MachinePrefix); n > 1 {
+			return "", fmt.Errorf("%w: 里面有多段机读块（%d 段），不知道用哪段", ErrMultiMachine, n)
+		}
+		return text, nil
+	case nb != ne:
+		return "", fmt.Errorf("%w: begin/end 不成对（begin=%d end=%d）", ErrTruncated, nb, ne)
+	case nb > 1:
+		return "", fmt.Errorf("%w: 里面有 %d 段机读块，不知道用哪段", ErrMultiMachine, nb)
+	}
 	i := strings.Index(text, BeginMarker)
 	j := strings.Index(text, EndMarker)
-	switch {
-	case i >= 0 && j > i:
-		return text[i+len(BeginMarker) : j], nil
-	case i >= 0 && j < 0:
-		return "", fmt.Errorf("%w: 只有 begin 没有 end", ErrTruncated)
-	case i < 0 && j >= 0:
-		return "", fmt.Errorf("%w: 只有 end 没有 begin", ErrTruncated)
-	default:
-		// 没有 marker：整段当机读块（用户只粘了一行 v1:... 的情况）。
-		return text, nil
+	if j < i {
+		return "", fmt.Errorf("%w: end 出现在 begin 之前", ErrTruncated)
 	}
+	return text[i+len(BeginMarker) : j], nil
 }
 
 // keepMachineRune 决定剥离后保留哪些字符：只保留 base64url 字母表 + 分隔符 '.' + 前缀里的 ':'。
@@ -523,18 +577,26 @@ func checkPayload(p Payload) error {
 	seenCap := make(map[string]struct{}, len(p.Caps))
 	for _, c := range p.Caps {
 		if !KnownCap(c) {
-			return bad("未知能力位 %q（闭枚枚举）", c)
+			return bad("未知能力位 %q（闭合枚举）", c)
 		}
 		if _, dup := seenCap[c]; dup {
 			return bad("caps 里 %q 重复", c)
 		}
 		seenCap[c] = struct{}{}
 	}
-	if p.RV.Res != RulesVersion || p.RV.Vote != RulesVersion || p.RV.Hash != RulesVersion {
-		// §10.1④：规则版本不匹配属于**第三类**（"这是另一版规则办的会"），
-		// 不许硬失败成"卡对不上"——签名可能是好的，只是这张卡不对这场会。
-		return fmt.Errorf("%w: rv={res:%d,vote:%d,hash:%d}，本机支持 {res:%d,vote:%d,hash:%d}",
-			ErrRulesMismatch, p.RV.Res, p.RV.Vote, p.RV.Hash, RulesVersion, RulesVersion, RulesVersion)
+	// rv 不在这里判：它是没签名的字段，只有验签通过后才能定性（见 Card.Verify / A3）。
+	// 数量与长度上限（A7）：签发侧自觉不够，接收侧也得挡，否则一张卡能塞几百 KB。
+	if len(p.IDs) > 64 {
+		return bad("ids %d 个（上限 64）", len(p.IDs))
+	}
+	if len(p.EP) > 8 {
+		return bad("ep %d 个（上限 8）", len(p.EP))
+	}
+	if len(p.Caps) > 8 {
+		return bad("caps %d 个（上限 8）", len(p.Caps))
+	}
+	if len(p.HN) > 120 || len(p.ON) > 120 {
+		return bad("hn/on 太长")
 	}
 	if strings.TrimSpace(p.N) == "" {
 		return bad("n（卡 nonce）为空")
@@ -645,6 +707,10 @@ func HumanError(err error) string {
 	switch {
 	case err == nil:
 		return ""
+	case errors.Is(err, ErrHumanTopic):
+		return HumanTopicMismatch
+	case errors.Is(err, ErrMultiMachine):
+		return HumanMultiMachine
 	case errors.Is(err, ErrTruncated):
 		return HumanTruncated
 	case errors.Is(err, ErrBadSignature):
@@ -671,4 +737,25 @@ func isHex16(s string) bool {
 		}
 	}
 	return true
+}
+
+// humanTopic 从人读块里抠出「议题」原文（"邀你参加「X」"）。抠不到就当没有，
+// 不因为措辞不同就拒卡。
+func humanTopic(text string) (string, bool) {
+	if i := strings.Index(text, BeginMarker); i >= 0 {
+		text = text[:i]
+	}
+	l := strings.Index(text, "「")
+	if l < 0 {
+		return "", false
+	}
+	r := strings.Index(text[l:], "」")
+	if r <= 0 {
+		return "", false
+	}
+	topic := strings.TrimSpace(text[l+len("「") : l+r])
+	if topic == "" {
+		return "", false
+	}
+	return topic, true
 }

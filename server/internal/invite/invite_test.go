@@ -392,12 +392,21 @@ func TestParseAtJoinBy(t *testing.T) {
 	if _, err := ParseAt(block, p.Exp); err != nil {
 		t.Fatalf("恰好等于 joinBy 不该判过期: %v", err)
 	}
-	if _, err := ParseAt(block, p.Exp+1); !errors.Is(err, ErrExpired) {
-		t.Fatalf("超过 joinBy 期望 ErrExpired，实际 %v", err)
+	// 过期不再由 Parse 定性（A3：exp 没签名，必须等验签），改由 CheckJoinBy 判。
+	c, err := ParseAt(block, p.Exp+1)
+	if err != nil {
+		t.Fatalf("过期卡仍应解析成功: %v", err)
+	}
+	if err := CheckJoinBy(c); !errors.Is(err, ErrExpired) {
+		t.Fatalf("超过 joinBy 期望 CheckJoinBy 给 ErrExpired，实际 %v", err)
 	}
 	// now=0 表示不判。
-	if _, err := ParseAt(block, 0); err != nil {
+	c0, err := ParseAt(block, 0)
+	if err != nil {
 		t.Fatalf("now=0 不该判过期: %v", err)
+	}
+	if err := CheckJoinBy(c0); err != nil {
+		t.Fatalf("now=0 时 CheckJoinBy 不该报错: %v", err)
 	}
 }
 
