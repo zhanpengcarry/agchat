@@ -38,7 +38,9 @@ func badOp(o oplog.Op, code, reason string) *replayBlock {
 
 type replayResult struct {
 	agg *room.Agg
-	now int64
+	// genesis 是签过名的 create 载荷（manifest 是打包者写的文件，谁都能改）
+	genesis *createPayload
+	now     int64
 }
 
 // advanceReasonKnown 判定 advance 的 reason 是否落在 docs/09 §10.2 第 6 条的
@@ -56,6 +58,7 @@ func replayBundle(ops []oplog.Op) (*replayResult, *replayBlock) {
 	}
 	agg := &room.Agg{Room: r}
 	var snap *roomSnapshot
+	var genesis *createPayload
 	var lastT int64
 
 	for _, o := range ops {
@@ -67,6 +70,9 @@ func replayBundle(ops []oplog.Op) (*replayResult, *replayBlock) {
 			var p createPayload
 			if err := decodePayload(o.P, &p); err != nil {
 				return nil, badOp(o, CodeReplayUnknownOp, "create 载荷解析失败："+err.Error())
+			}
+			if genesis == nil {
+				genesis = &p
 			}
 			r.Topic = p.Topic
 			r.MaxRounds = p.MaxRounds
@@ -291,7 +297,7 @@ func replayBundle(ops []oplog.Op) (*replayResult, *replayBlock) {
 	if now <= 0 {
 		now = lastT // 兜底：用最后一条 op 的生效时刻，绝不读墙钟
 	}
-	return &replayResult{agg: agg, now: now}, nil
+	return &replayResult{agg: agg, now: now, genesis: genesis}, nil
 }
 
 // applySnapshot 把 end op 的终态快照落到 Room 上（B-14 的显式字段集）。

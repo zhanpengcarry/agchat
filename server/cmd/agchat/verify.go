@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"agchat/internal/oplog"
 	"agchat/internal/verify"
@@ -29,6 +31,7 @@ func runVerify(args []string) int {
 	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	bundlePath := fs.String("bundle", "", "证据包路径（bundle.zip）")
+	receiptsPath := fs.String("receipts", "", "可选：本机座位收据（seats/<ref>.receipts.jsonl）。给了就能发现宿主漏记")
 	asJSON := fs.Bool("json", false, "输出单行机器可读 JSON 到 stdout，人话走 stderr")
 
 	if err := fs.Parse(args); err != nil {
@@ -57,7 +60,24 @@ func runVerify(args []string) int {
 		}, *asJSON, os.Stdout, os.Stderr)
 	}
 
-	rep, err := verify.Run(b)
+	// 收据是可选输入，给了就必须读得动：读不动比没有更糟（会以为是"没漏记"）。
+	var receipts []oplog.Ack
+	if strings.TrimSpace(*receiptsPath) != "" {
+		receipts, err = loadReceipts(*receiptsPath)
+		if err != nil {
+			return emitVerifyReport(verify.Report{
+				State: verify.StateUnverifiable,
+				Code:  verify.CodeBundleUnreadable,
+				Codes: []string{verify.CodeBundleUnreadable},
+				Reasons: []string{
+					"收据文件读不出来：" + err.Error(),
+					"没有收据就查不出宿主漏记，所以这次不给判决",
+				},
+			}, *asJSON, os.Stdout, os.Stderr)
+		}
+	}
+
+	rep, err := verify.RunWithReceipts(b, receipts)
 	if err != nil {
 		return emitVerifyReport(verify.Report{
 			State: verify.StateUnverifiable,
@@ -136,4 +156,34 @@ func failAtText(at int) string {
 		return "?"
 	}
 	return fmt.Sprintf("%d", at)
+}
+
+// loadReceipts 读 seats/<ref>.receipts.jsonl（一行一条 ack）。
+// 空行与解析失败的行都要有明确说法：收据是判决输入，不许静默跳过。
+func loadReceipts(path string) ([]oplog.Ack, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	var out []oplog.Ack
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64<<10), 1<<20)
+	line := 0
+	for sc.Scan() {
+		line++
+		raw := strings.TrimSpace(sc.Text())
+		if raw == "" {
+			continue
+		}
+		var a oplog.Ack
+		if err := json.Unmarshal([]byte(raw), &a); err != nil {
+			return nil, fmt.Errorf("第 %d 行不是合法收据: %w", line, err)
+		}
+		out = append(out, a)
+	}
+	if err := sc.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }

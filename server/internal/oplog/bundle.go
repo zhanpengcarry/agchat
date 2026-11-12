@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -206,14 +207,25 @@ func ReadBundle(r io.Reader) (*Bundle, error) {
 		manRaw, opsRaw, acksRaw, resultRaw, targetRaw []byte
 		seenMan, seenOps, seenTarget                  bool
 	)
+	// 条目名按 basename 归一：`zip -r out.zip ./bundle` 与 `bundle\manifest.json`
+	// 都会带前缀，只做精确匹配的话，最普通的"解压看一眼再打包"就打不开了（A11）。
+	// 同名条目二次出现必须报错：不同解压器取法不同，静默覆盖等于让两份流里挑一份（A10）。
+	seenName := map[string]bool{}
 	for _, f := range zr.File {
-		name := f.Name
+		name := path.Base(strings.ReplaceAll(f.Name, `\`, "/"))
+		if strings.HasSuffix(f.Name, "/") {
+			continue // 目录条目
+		}
 		switch name {
 		case FileManifest, FileOps, FileAcks, FileResult, FileTarget:
 		default:
 			// 未知条目忽略（向前兼容），不参与判决。
 			continue
 		}
+		if seenName[name] {
+			return nil, fmt.Errorf("%w: 同名条目出现两次：%s", ErrBadBundle, name)
+		}
+		seenName[name] = true
 		data, err := readEntry(f)
 		if err != nil {
 			return nil, err
@@ -269,6 +281,11 @@ func ReadBundle(r io.Reader) (*Bundle, error) {
 		return nil, fmt.Errorf("%w: verify-target.ref=%s 与 manifest.roomRef=%s 不一致", ErrBadBundle, target.Ref, b.Manifest.Ref)
 	}
 	// manifest.expect 与 verify-target.json 是同一份声明值的两份拷贝；不一致说明包被改过。
+	// expect 缺了就让 verify-target 变成唯一副本，两份互相印证的白送（A12）：
+	// 所以 expect 从"可选"改成必需。
+	if e := b.Manifest.Expect; e.DecisionHash == "" && e.TranscriptHash == "" {
+		return nil, fmt.Errorf("%w: manifest 缺 expect（两个指纹必须与 verify-target 各存一份）", ErrBadBundle)
+	}
 	if e := b.Manifest.Expect; e.DecisionHash != "" || e.TranscriptHash != "" {
 		if e.DecisionHash != target.DecisionHash || e.TranscriptHash != target.TranscriptHash {
 			return nil, fmt.Errorf("%w: manifest.expect 与 verify-target.json 不一致", ErrBadBundle)

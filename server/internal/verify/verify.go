@@ -20,6 +20,7 @@
 package verify
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -42,6 +43,8 @@ const (
 	CodeBundleEmpty          = "bundle_empty"
 	CodeBundleUnreadable     = "bundle_unreadable"
 	CodeManifestMalformed    = "manifest_malformed"
+	CodeManifestMismatch     = "manifest_mismatch"
+	CodeAckOrphan            = "ack_orphan"
 	CodeRuleVersionMissing   = "rule_version_missing"
 	CodeManifestVersionDiff  = "manifest_version_mismatch"
 	CodeChainBroken          = "chain_broken"
@@ -119,7 +122,15 @@ var resultForVerify func(agg *room.Agg, now int64) *room.Result = room.BuildResu
 //
 // 返回的 error 只表示"调用方给的东西没法判"（如 nil bundle），不表示判决失败；
 // 判决本身永远在 Report.State 里（三态）。
-func Run(b *oplog.Bundle) (Report, error) {
+// Run 是 RunWithReceipts 的无收据版（收据只在包内，无法发现"宿主漏记"）。
+func Run(b *oplog.Bundle) (Report, error) { return RunWithReceipts(b, nil) }
+
+// RunWithReceipts 额外拿参与者本机的 ack 收据做交叉。
+//
+// 为什么必须有：acks 与 ops 出自同一个（可能恶意的）宿主，两边自洽就查不出漏记 ——
+// 删掉一条对自己不利的发言、连它的 ack 一起删、重封链重算指纹，包内完全干净。
+// 参与者手上那份收据是唯一能咬住这件事的东西（C-4/C-5）。
+func RunWithReceipts(b *oplog.Bundle, receipts []oplog.Ack) (Report, error) {
 	rep := Report{State: StateUnverifiable, Code: CodeBundleEmpty, Reasons: []string{}}
 	if b == nil {
 		return rep, errors.New("verify: bundle 为 nil")
@@ -148,6 +159,15 @@ func Run(b *oplog.Bundle) (Report, error) {
 	// 作者公钥缺失是"无从校验"而非"伪造"（C-7）：先记账，最终判决降级为 unverifiable。
 	unverifiedAuthors := ch.reasons
 
+	// ①.5 参与者收据交叉：手上有收据、包里却没有对应 op → 宿主漏记（A9）。
+	if why, at := checkReceiptsAgainstOps(b.Ops, receipts); why != "" {
+		rep.State, rep.FailAt = StateFailed, at
+		rep.Code = CodeAckOrphan
+		rep.Codes = addCode(rep.Codes, CodeAckOrphan)
+		rep.Reasons = append(rep.Reasons, why)
+		return rep, nil
+	}
+
 	// C-3 / B-10：manifest 必须钉住规则版本。对不上时「重算不符」就无法区分
 	// 「被篡改」与「代码升级了」，此时说 verified 没有判决力。
 	if code, why := checkRuleVersions(b.Manifest); why != "" {
@@ -163,6 +183,17 @@ func Run(b *oplog.Bundle) (Report, error) {
 		rep.Code, rep.FailAt = blk.code, blk.failAt
 		rep.Codes = addCode(rep.Codes, blk.code)
 		rep.Reasons = append(rep.Reasons, blk.reason)
+		return rep, nil
+	}
+
+	// ②.5 manifest 是打包者自己写的文件，谁都能改；用来指认"这是哪一场会"的
+	// 那几个字段（ref/topic/seats/inviteIds）必须回到**签过名的 create 载荷**上。
+	// 不做这一步，改一改 manifest.topic 就能让一份 verified 的包说成另一件事。
+	if why := checkManifestAgainstGenesis(b.Manifest, rp.genesis, b.Ops); why != "" {
+		rep.State, rep.FailAt = StateFailed, 1
+		rep.Code = CodeManifestMismatch
+		rep.Codes = addCode(rep.Codes, CodeManifestMismatch)
+		rep.Reasons = append(rep.Reasons, why)
 		return rep, nil
 	}
 
@@ -327,4 +358,95 @@ func idxList(idx []int) string {
 		return "无"
 	}
 	return b.String()
+}
+
+// checkManifestAgainstGenesis 把 manifest 里"指认这场会是谁"的字段，逐项对回
+// 签过名的 create 载荷（A5）。manifest 与 verify-target 都是打包者写的甲骨文，
+// 只有 create 载荷是被 roomKey 签过的；两者不一致时，判决不许再叫 verified。
+func checkManifestAgainstGenesis(m oplog.Manifest, g *createPayload, ops []oplog.Op) string {
+	if g == nil {
+		return "op 流里没有 create 载荷：无法确认这份包是哪一场会"
+	}
+	if m.Ref != g.Ref {
+		return fmt.Sprintf("manifest.roomRef 与签过名的 create 不一致：manifest %q ≠ create %q", m.Ref, g.Ref)
+	}
+	if m.Topic != "" && m.Topic != g.Topic {
+		return fmt.Sprintf("manifest.topic 与签过名的 create 不一致：manifest %q ≠ create %q", m.Topic, g.Topic)
+	}
+	if m.Seats != 0 && m.Seats != g.MaxAgents && m.Seats != g.Seats {
+		return fmt.Sprintf("manifest.seats 与签过名的 create 不一致：manifest %d", m.Seats)
+	}
+	if len(m.InviteIDs) > 0 {
+		// 建会之后仍然可以继续发卡（room new 的自动卡就是这么来的），
+		// 所以合法的 id 来源有两处：create 里的，和后续 invite op 里的。
+		want := make(map[string]bool, len(g.IDs)+len(ops))
+		for _, id := range g.IDs {
+			want[id.ID] = true
+		}
+		for _, o := range ops {
+			if o.O != oplog.OpInvite {
+				continue
+			}
+			var p struct {
+				ID string `json:"id"`
+			}
+			if err := json.Unmarshal(o.P, &p); err == nil && p.ID != "" {
+				want[p.ID] = true
+			}
+		}
+		for _, got := range m.InviteIDs {
+			if !want[got] {
+				return fmt.Sprintf("manifest.inviteIds 里出现了流里没签过的 id %q", got)
+			}
+		}
+	}
+	return ""
+}
+
+// checkReceiptsAgainstOps 用参与者本机收据去咬宿主有没有漏记。
+//
+// 每条收据都对应一次"宿主说它收下了"的承诺（{i,h,t}，roomKey 签）。包里找不到
+// 同 (i,h) 的 op，就是宿主把这条 op 拿掉了；t 对不上则说明 op 被换过时间。
+// 返回 (人话, 失败位置)；人话为空表示通过。
+func checkReceiptsAgainstOps(ops []oplog.Op, receipts []oplog.Ack) (why string, failAt int) {
+	if len(receipts) == 0 {
+		return "", 0
+	}
+	type key struct {
+		i int
+		h string
+	}
+	have := make(map[key]oplog.Op, len(ops))
+	for _, o := range ops {
+		have[key{o.I, strings.ToLower(o.H)}] = o
+	}
+	for _, a := range receipts {
+		o, ok := have[key{a.I, strings.ToLower(a.H)}]
+		if !ok {
+			for _, cand := range ops {
+				if cand.I == a.I {
+					return fmt.Sprintf("收据称第 %d 条已收下（h=%s），但包里同一条的 h 对不上：op 被替换过", a.I, shortHash(a.H)), a.I
+				}
+			}
+			return fmt.Sprintf("收据称第 %d 条已收下（h=%s），包里根本没有这一条：宿主漏记", a.I, shortHash(a.H)), maxInt(a.I, 1)
+		}
+		if o.T != a.T {
+			return fmt.Sprintf("第 %d 条的 op 时间与收据不一致：op.T=%d 收据.T=%d", a.I, o.T, a.T), a.I
+		}
+	}
+	return "", 0
+}
+
+func shortHash(h string) string {
+	if len(h) > 12 {
+		return h[:12] + "…"
+	}
+	return h
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
