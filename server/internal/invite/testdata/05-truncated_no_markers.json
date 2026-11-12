@@ -1,0 +1,8 @@
+{
+  "case": "truncated_no_markers",
+  "note": "截断：连前缀都只剩一半",
+  "expect": "fail",
+  "stage": "parse",
+  "text": "agchat-invite:v1:eyJhcGkiOjEsImNhcHMiOlsiam9pbiIsInJlYWQiLCJwb3N0IiwicHJvcG9zZSIsInZvdGUiXSwiZXAiOlt7ImsiOiJsb29wYmFjayIsInUiOiJodHRwOi8vMTI3LjAuMC4xOjU0MzIxIn1dLCJleHAiOjE3NjUwMDAwMDAwMDAsImhuIjoi5ZGo5bKt55qETWFjQm9vayIsImlhdCI6MTc2NDkwMDAwMDAwMCwiaWRzIjpbIml2XzdmM2EiXSwia2V5IjoiaGk0UzdOVkw4dlNvY3VLRnBZcEJES0FFOUU3Z043eEQtV0d",
+  "expectErr": "truncated"
+}

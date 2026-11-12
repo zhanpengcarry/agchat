@@ -1,0 +1,52 @@
+-- =============================================================================
+-- 迁移到 Postgres 时启用的行级安全（RLS）片段 —— 不是可跑的迁移，是设计对齐用的样例。
+--
+-- 为什么现在不用：SQLite 没有 RLS，所以"租户作用域"由 Go 层强制（internal/store/store.go）。
+-- 但两者必须设计得对得上，否则上 PG 那天要么改代码、要么把漏洞一起搬过去。
+--
+-- 对应关系：
+--   Go 层  store.WithTenant(ctx, tenantID, fn)   ←→   事务开头 SET LOCAL app.tenant_id
+--   Go 层  Tx 方法里的 WHERE tenant_id = ?        ←→   RLS 策略 USING (tenant_id = current_setting(...))
+--
+-- ★ 关键点：`SET LOCAL` 只在当前事务内有效，事务一结束就失效，
+--   所以连接池里复用的连接不会把上一个租户的身份泄漏给下一个请求。
+--   如果写成不带 LOCAL 的 `SET`，就成了跨请求串租户的经典事故。
+-- =============================================================================
+
+-- 1) 开表级 RLS
+ALTER TABLE rooms    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE agents   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE op_keys  ENABLE ROW LEVEL SECURITY;
+
+-- 2) 强制对所有角色生效（包括表的 owner，否则 owner 会绕过策略）
+ALTER TABLE rooms    FORCE ROW LEVEL SECURITY;
+ALTER TABLE agents   FORCE ROW LEVEL SECURITY;
+ALTER TABLE messages FORCE ROW LEVEL SECURITY;
+ALTER TABLE op_keys  FORCE ROW LEVEL SECURITY;
+
+-- 3) 每个租户一条策略。current_setting('app.tenant_id', true) 里的 true 表示
+--    取不到就返回 NULL 而不是报错 —— 那样查询会得到空集，而不是炸掉整个服务。
+CREATE POLICY tenant_isolation ON rooms
+  USING (tenant_id = current_setting('app.tenant_id', true))
+  WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
+
+CREATE POLICY tenant_isolation ON agents
+  USING (tenant_id = current_setting('app.tenant_id', true))
+  WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
+
+CREATE POLICY tenant_isolation ON messages
+  USING (tenant_id = current_setting('app.tenant_id', true))
+  WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
+
+CREATE POLICY tenant_isolation ON op_keys
+  USING (tenant_id = current_setting('app.tenant_id', true))
+  WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
+
+-- 4) 应用账号不要给 BYPASSRLS。超级用户会绕过 RLS，务必用普通角色：
+--    CREATE ROLE agchat_app LOGIN PASSWORD '...' NOBYPASSRLS;
+--    GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO agchat_app;
+--
+-- 5) 每个请求的事务开头（对应的 Go 代码）：
+--      tx.Exec(ctx, "SET LOCAL app.tenant_id = $1", tenantID)
+--      // 之后所有查询都不需要再手写 tenant_id —— 但留着也无害，等于双保险。

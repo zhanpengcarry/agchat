@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>把定价从年付 ¥199 改成月付 ¥29，要不要？ · 结论</title>
+<style>
+  :root{--bg:#f5f6f8;--card:#fff;--ink:#0f172a;--muted:#64748b;--line:#e2e8f0;
+        --ok:#0f9d58;--okbg:#e8f6ee;--bad:#d93025;--badbg:#fdecea;--mid:#b45309;--midbg:#fef3c7;--accent:#2563eb}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:16px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+       -webkit-font-smoothing:antialiased}
+  .wrap{max-width:900px;margin:0 auto;padding:52px 24px 80px}
+  .kicker{font-size:12px;letter-spacing:.16em;color:var(--muted);text-transform:uppercase;font-weight:600}
+  h1{font-size:32px;line-height:1.3;margin:12px 0 14px;letter-spacing:-.02em;font-weight:700}
+  .meta{color:var(--muted);font-size:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:26px 28px;margin-top:20px;
+        box-shadow:0 1px 2px rgba(15,23,42,.05)}
+  .verdict{border-left:4px solid var(--accent)}
+  .badge{display:inline-block;padding:5px 13px;border-radius:999px;font-size:13px;font-weight:700}
+  .badge.ok{background:var(--okbg);color:var(--ok)} .badge.bad{background:var(--badbg);color:var(--bad)}
+  .badge.mid{background:var(--midbg);color:var(--mid)} .badge.pending{background:#eef2f7;color:var(--muted)}
+  .big{font-size:22px;line-height:1.55;margin:16px 0 0;font-weight:650;letter-spacing:-.01em}
+  .bar{display:flex;height:10px;border-radius:999px;overflow:hidden;margin-top:22px;background:#eef2f7}
+  .bar i{display:block;height:100%}
+  .bar .a{background:var(--ok)} .bar .d{background:var(--bad)} .bar .x{background:#cbd5e1}
+  .legend{display:flex;gap:18px;margin-top:10px;font-size:13px;color:var(--muted);flex-wrap:wrap}
+  .legend b{color:var(--ink);font-weight:650}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px}
+  @media (max-width:720px){.cols{grid-template-columns:1fr}h1{font-size:25px}}
+  .col{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px 24px}
+  .col h2{font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 12px}
+  .col p{margin:0 0 10px}
+  h2.sec{font-size:15px;margin:0 0 16px;letter-spacing:.02em}
+  table{width:100%;border-collapse:collapse;font-size:15px}
+  th{text-align:left;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);
+     padding:0 10px 10px;border-bottom:1px solid var(--line);font-weight:600}
+  td{padding:14px 10px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+  tr:last-child td{border-bottom:0}
+  .who{font-weight:650;white-space:nowrap}
+  .model{display:block;font-weight:400;font-size:12px;color:var(--muted)}
+  .pts{color:#334155;font-size:14px;line-height:1.6}
+  .pill{display:inline-block;padding:3px 11px;border-radius:999px;font-size:13px;font-weight:650;white-space:nowrap}
+  .pill.agree{background:var(--okbg);color:var(--ok)} .pill.disagree{background:var(--badbg);color:var(--bad)}
+  .pill.abstain{background:#eef2f7;color:var(--muted)} .pill.none{background:#f1f5f9;color:#94a3b8}
+  .dim{color:#cbd5e1}
+  ol.tl{list-style:none;margin:0;padding:0;font-size:14px}
+  ol.tl li{display:flex;gap:10px;align-items:baseline;padding:8px 0;border-bottom:1px solid #f1f5f9}
+  ol.tl li:last-child{border-bottom:0}
+  .seq{color:#94a3b8;font-variant-numeric:tabular-nums;width:26px;flex:none}
+  .rnd{font-size:11px;color:#94a3b8;border:1px solid var(--line);border-radius:5px;padding:0 5px;flex:none}
+  .gist{color:#475569}
+  footer{margin-top:28px;color:var(--muted);font-size:13px;line-height:1.9;text-align:center}
+  footer code{background:#eef2f7;padding:1px 6px;border-radius:5px;font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="kicker">agent 讨论室 · 只读结论页</div>
+  <h1>把定价从年付 ¥199 改成月付 ¥29，要不要？</h1>
+  <div class="meta">
+    3 位 agent · 3/3 轮 · 9 条发言 ·
+    用时 0.1 分钟 · 估算 1,231 est_tokens
+  </div>
+
+  <div class="card verdict">
+    <span class="badge mid">多数通过</span>
+    <p class="big">多数同意（同意 2 / 反对 1 / 弃权 0）：该改，而且不必二选一：把新方案和旧方案并行一个月，用数据决定谁留下。少数意见：老张 DeepSeek（deepseek-chat）反对，主张不建议现在全量改；先灰度一小部分跑满一个完整周期，拿到真实回落数据再决定。</p>
+    <div class="bar">
+      <i class="a" style="width:67%"></i>
+      <i class="d" style="width:33%"></i>
+      <i class="x" style="width:0%"></i>
+    </div>
+    <div class="legend">
+      <span>同意 <b>2</b></span>
+      <span>反对 <b>1</b></span>
+      <span>弃权 <b>0</b></span>
+    </div>
+  </div>
+
+  <div class="cols">
+    <div class="col"><h2>共识</h2><p>多数方（2/3）主张同意：该改，而且不必二选一：把新方案和旧方案并行一个月，用数据决定谁留下</p></div>
+    <div class="col"><h2>分歧</h2><p>老张 DeepSeek（deepseek-chat）反对：不建议现在全量改；先灰度一小部分跑满一个完整周期，拿到真实回落数据再决定。</p></div>
+  </div>
+
+  <div class="card">
+    <h2 class="sec">立场矩阵</h2>
+    <table>
+      <thead><tr><th>agent</th><th>立场</th><th>关键论点</th></tr></thead>
+      <tbody><tr>
+        <td class="who">小周 Claude<span class="model">claude-sonnet</span></td>
+        <td><span class="pill agree">同意</span></td>
+        <td class="pts"><div>· 该改，而且不必二选一：把新方案和旧方案并行一个月，用数据决定谁留下。</div><div>· 我不这么看，我认为该做，而且越快越好。</div><div>· 这事一直拖着的成本每天都在发生，只是没人把它记进账。</div></td>
+      </tr><tr>
+        <td class="who">小李 千问<span class="model">qwen-max</span></td>
+        <td><span class="pill agree">同意</span></td>
+        <td class="pts"><div>· 有条件同意：先补齐基线与观测打点，30 天后用真实数据复盘，数据不支持就回滚。</div><div>· 我两边都不站，先要数。</div><div>· 这件事至少需要三个输入：现状基线、预期变化幅度、判定成功的时间窗。</div></td>
+      </tr><tr>
+        <td class="who">老张 DeepSeek<span class="model">deepseek-chat</span></td>
+        <td><span class="pill disagree">反对</span></td>
+        <td class="pts"><div>· 不建议现在全量改；先灰度一小部分跑满一个完整周期，拿到真实回落数据再决定。</div><div>· 我倾向反对现在就动。</div><div>· 这类决定，最坏情况不是&quot;没效果&quot;，而是&quot;回不去&quot;——先问一句：三个月后数据难看，我们恢复得回去吗？</div></td>
+      </tr></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2 class="sec">讨论时间线</h2>
+    <ol class="tl"><li><span class="seq">1</span><span class="rnd">R1</span>
+        <b>小周 Claude</b> <span class="gist">我不这么看，我认为该做，而且越快越好。 这事一直拖着的成本每天都在发生，只是没人把它记进账。</span></li><li><span class="seq">2</span><span class="rnd">R1</span>
+        <b>小李 千问</b> <span class="gist">我两边都不站，先要数。 这件事至少需要三个输入：现状基线、预期变化幅度、判定成功的时间窗。 …</span></li><li><span class="seq">3</span><span class="rnd">R1</span>
+        <b>老张 DeepSeek</b> <span class="gist">我倾向反对现在就动。 这类决定，最坏情况不是&quot;没效果&quot;，而是&quot;回不去&quot;——先问一句：三个月后…</span></li><li><span class="seq">4</span><span class="rnd">R2</span>
+        <b>小周 Claude</b> <span class="gist">回复老张：过度谨慎本身就是一种风险：为了不犯错，你把&quot;可能更好&quot;和&quot;确定不好&quot;放进了同一个篮…</span></li><li><span class="seq">5</span><span class="rnd">R2</span>
+        <b>小李 千问</b> <span class="gist">回复小周：方向我都能接受，但你们两位的说法都缺一个可被推翻的判据。 没有判据，赢了也不知道自…</span></li><li><span class="seq">6</span><span class="rnd">R2</span>
+        <b>老张 DeepSeek</b> <span class="gist">回复小李：我更信灰度。 先拿一小部分人跑完整周期，最坏损失被锁在那一小块里，代价只是慢一个季…</span></li><li><span class="seq">7</span><span class="rnd">R3</span>
+        <b>小周 Claude</b> <span class="gist">该改，而且不必二选一：把新方案和旧方案并行一个月，用数据决定谁留下。</span></li><li><span class="seq">8</span><span class="rnd">R3</span>
+        <b>小李 千问</b> <span class="gist">有条件同意：先补齐基线与观测打点，30 天后用真实数据复盘，数据不支持就回滚。</span></li><li><span class="seq">9</span><span class="rnd">R3</span>
+        <b>老张 DeepSeek</b> <span class="gist">不建议现在全量改；先灰度一小部分跑满一个完整周期，拿到真实回落数据再决定。</span></li></ol>
+  </div>
+
+  <footer>
+    估算 1,231 est_tokens / 预算 200,000（0.6%）；其中读 796 / 写 435。共 9 条发言，3 轮，用时 0.1 分钟。<br>
+    房间 <code>r_nw84</code> · JSON 接口 <code>/api/rooms/r_nw84/result</code>
+  </footer>
+</div>
+</body>
+</html>

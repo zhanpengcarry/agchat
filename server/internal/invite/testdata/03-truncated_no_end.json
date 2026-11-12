@@ -1,0 +1,8 @@
+{
+  "case": "truncated_no_end",
+  "note": "截断：只有 begin 没有 end",
+  "expect": "fail",
+  "stage": "parse",
+  "text": "---agchat-invite-begin---\nagchat-invite:v1:eyJhcGkiOjEsImNhcHMiOlsiam9pbiIsInJlYWQiLCJwb3N0IiwicHJvcG9zZSIsInZvdGUiXSwiZXAiOlt7ImsiOiJsb29wYmFjayIsInUiOiJodHRwOi8vMTI3LjAuMC4xOjU0MzIxIn1dLCJleHAiOjE3NjUwMDAwMDAwMDAsImhuIjoi5ZGo5bKt55qETWFjQm9vayIsImlhdCI6MTc2NDkwMDAwMDAwMCwiaWRzIjpbIml2XzdmM2EiXSwia2V5IjoiaGk0UzdOVkw4dlNvY3VLRnBZcEJES0FFOUU3Z043eEQtV0duR1JOVUlibyIsIm4iOiIwMTIzNDU2Nzg5YWJjZGVmIiwib24iOiLlkajlsq0iLCJyZWYiOiJLUHdRUDJTb0NGVFRVbF9tT3JKS1lQR1JDbGxMM1c4Z00tY3NMS1JianZrIiwicnYiOnsiaGFzaCI6MSwicmVzIjoxLCJ2b3RlIjoxfSwic2VhdHMiOjMsInRoIjoiYjAyNDU3NTE0NThiOTY4MiIsInVzZXMiOjEsInYiOjF9.4OzWFz7FY7EJpjdNcNhdvAkY5F42T6oPiikoVy_LNbYRsT",
+  "expectErr": "truncated"
+}

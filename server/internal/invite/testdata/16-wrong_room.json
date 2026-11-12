@@ -1,0 +1,10 @@
+{
+  "case": "wrong_room",
+  "note": "换 ref：签名有效但是另一场会的卡（§2.4 第三句）",
+  "expect": "fail",
+  "stage": "room",
+  "text": "---agchat-invite-begin---\nagchat-invite:v1:eyJhcGkiOjEsImNhcHMiOlsiam9pbiIsInJlYWQiLCJwb3N0IiwicHJvcG9zZSIsInZvdGUiXSwiZXAiOlt7ImsiOiJsb29wYmFjayIsInUiOiJodHRwOi8vMTI3LjAuMC4xOjU0MzIxIn1dLCJleHAiOjE3NjUwMDAwMDAwMDAsImhuIjoi5ZGo5bKt55qETWFjQm9vayIsImlhdCI6MTc2NDkwMDAwMDAwMCwiaWRzIjpbIml2XzdmM2EiXSwia2V5IjoiaGk0UzdOVkw4dlNvY3VLRnBZcEJES0FFOUU3Z043eEQtV0duR1JOVUlibyIsIm4iOiIwMTIzNDU2Nzg5YWJjZGVmIiwib24iOiLlkajlsq0iLCJyZWYiOiJLUHdRUDJTb0NGVFRVbF9tT3JKS1lQR1JDbGxMM1c4Z00tY3NMS1JianZrIiwicnYiOnsiaGFzaCI6MSwicmVzIjoxLCJ2b3RlIjoxfSwic2VhdHMiOjMsInRoIjoiYjAyNDU3NTE0NThiOTY4MiIsInVzZXMiOjEsInYiOjF9.4OzWFz7FY7EJpjdNcNhdvAkY5F42T6oPiikoVy_LNbYRsTLG6TSpJ85nxG8NENfjD9Vf0RpRHoGe7z9o_O_NDg\n---agchat-invite-end---",
+  "pub": "hi4S7NVL8vSocuKFpYpBDKAE9E7gN7xD-WGnGRNUIbo",
+  "verifyRef": "Whg_cgnfIuRw-vPns-SgKr9vlYkyLuedoMh-bKRnLpA",
+  "expectErr": "wrong_room"
+}

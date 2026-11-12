@@ -1,0 +1,8 @@
+{
+  "case": "missing_iat",
+  "note": "缺签发时刻 iat（§10.1⑤）",
+  "expect": "fail",
+  "stage": "parse",
+  "text": "---agchat-invite-begin---\nagchat-invite:v1:eyJhcGkiOjEsImNhcHMiOlsiam9pbiIsInJlYWQiLCJwb3N0IiwicHJvcG9zZSIsInZvdGUiXSwiZXAiOlt7ImsiOiJsb29wYmFjayIsInUiOiJodHRwOi8vMTI3LjAuMC4xOjU0MzIxIn1dLCJleHAiOjE3NjUwMDAwMDAwMDAsImhuIjoi5ZGo5bKt55qETWFjQm9vayIsImlkcyI6WyJpdl83ZjNhIl0sImtleSI6ImhpNFM3TlZMOHZTb2N1S0ZwWXBCREtBRTlFN2dON3hELVdHbkdSTlVJYm8iLCJuIjoiMDEyMzQ1Njc4OWFiY2RlZiIsIm9uIjoi5ZGo5bKtIiwicmVmIjoiS1B3UVAyU29DRlRUVWxfbU9ySktZUEdSQ2xsTDNXOGdNLWNzTEtSYmp2ayIsInJ2Ijp7Imhhc2giOjEsInJlcyI6MSwidm90ZSI6MX0sInNlYXRzIjozLCJ0aCI6ImIwMjQ1NzUxNDU4Yjk2ODIiLCJ1c2VzIjoxLCJ2IjoxfQ.7WM9FuXhBhCTjkH_9tfOc_gewGPNn3XIOUt6P_nWGIe_fvuFbgyqbhit185BniU5Q2atGU8b30ojZ41RH-zgBg\n---agchat-invite-end---",
+  "expectErr": "bad_signature"
+}

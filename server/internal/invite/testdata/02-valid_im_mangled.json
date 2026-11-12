@@ -1,0 +1,8 @@
+{
+  "case": "valid_im_mangled",
+  "note": "IM 加工：加 '\u003e '、折行、零宽字符、\u0026nbsp; 后仍可解（§2.2 剥字符规则）",
+  "expect": "pass",
+  "stage": "parse",
+  "text": "[人读块 · 不是凭证，可改]\n\u003e 周岭 的 agent 邀你参加「月付定价」· 3 人 · 今天 18:00 前可进 · 本机/内网\n\u003e KPwQP2So（短指纹，可让对方念）\n\u003e ---agchat-invite-begin---​　\u0026nbsp;\n\u003e agchat-invite:v1:eyJhcGkiOjEsImNhcHMiOls\n\u003e iam9pbiIsInJlYWQiLCJwb3N0IiwicHJvcG9zZSI\n\u003e sInZvdGUiXSwiZXAiOlt7ImsiOiJsb29wYmFjayI\n\u003e sInUiOiJodHRwOi8vMTI3LjAuMC4xOjU0MzIxIn1\n\u003e dLCJleHAiOjE3NjUwMDAwMDAwMDAsImhuIjoi5ZG\n\u003e o5bKt55qETWFjQm9vayIsImlhdCI6MTc2NDkwMDA\n\u003e wMDAwMCwiaWRzIjpbIml2XzdmM2EiXSwia2V5Ijo\n\u003e iaGk0UzdOVkw4dlNvY3VLRnBZcEJES0FFOUU3Z04\n\u003e 3eEQtV0duR1JOVUlibyIsIm4iOiIwMTIzNDU2Nzg\n\u003e 5YWJjZGVmIiwib24iOiLlkajlsq0iLCJyZWYiOiJ\n\u003e LUHdRUDJTb0NGVFRVbF9tT3JKS1lQR1JDbGxMM1c\n\u003e 4Z00tY3NMS1JianZrIiwicnYiOnsiaGFzaCI6MSw\n\u003e icmVzIjoxLCJ2b3RlIjoxfSwic2VhdHMiOjMsInR\n\u003e oIjoiYjAyNDU3NTE0NThiOTY4MiIsInVzZXMiOjE\n\u003e sInYiOjF9.4OzWFz7FY7EJpjdNcNhdvAkY5F42T6\n\u003e oPiikoVy_LNbYRsTLG6TSpJ85nxG8NENfjD9Vf0R\n\u003e pRHoGe7z9o_O_NDg​　\u0026nbsp;\n\u003e ---agchat-invite-end---​　\u0026nbsp;\n",
+  "pub": "hi4S7NVL8vSocuKFpYpBDKAE9E7gN7xD-WGnGRNUIbo"
+}

@@ -1,0 +1,70 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# 这个仓库的测试会**起真实进程**（isolation / meeting 两个套件都在黑盒打 HTTP），
+# 所以不并行、不跳过：假绿比红更贵。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.x'
+          cache-dependency-path: server/go.sum
+
+      - name: 依赖只有一个，先确认没长出来
+        working-directory: server
+        run: |
+          # 数「直接依赖」：交给 go 自己判断，别用正则猜
+          go list -m -f '{{if not .Indirect}}{{.Path}}{{end}}' all | grep -v '^$' | grep -v '^agchat$' | sort > /tmp/direct.txt
+          echo "直接依赖："; cat /tmp/direct.txt
+          n=$(wc -l < /tmp/direct.txt)
+          if [ "$n" -gt 1 ]; then
+            echo "::error::直接依赖超过 1 个（新代码必须只用标准库 + modernc.org/sqlite）"
+            exit 1
+          fi
+
+      - name: gofmt
+        working-directory: server
+        run: |
+          out=$(gofmt -l . || true)
+          if [ -n "$out" ]; then echo "$out"; echo "::error::gofmt 未格式化"; exit 1; fi
+
+      - name: build
+        working-directory: server
+        run: go build ./...
+
+      - name: vet
+        working-directory: server
+        run: go vet ./...
+
+      - name: 不变量门禁（room 包不许认识传输/凭证概念）
+        working-directory: server
+        run: |
+          if grep -rnE 'internal/(invite|oplog|host|envelope|authority)' internal/room/ ; then
+            echo "::error::internal/room 引入了宿主/载体包（arch B-7）"
+            exit 1
+          fi
+
+      - name: 单测 + 黑盒隔离套件 + 会议套件
+        working-directory: server
+        run: go test ./... -count=1
+
+      - name: 构建验收用二进制
+        working-directory: server
+        run: go build -o .bin/agchat ./cmd/agchat
+
+      - name: 验收脚本（本地宿主 A→B 全流程）
+        run: node tools/acceptance-decentralized.mjs

@@ -1,0 +1,8 @@
+{
+  "case": "unknown_cap",
+  "note": "未知能力位 caps+[admin]（闭枚枚举，fail closed）",
+  "expect": "fail",
+  "stage": "parse",
+  "text": "---agchat-invite-begin---\nagchat-invite:v1:eyJhcGkiOjEsImNhcHMiOlsiam9pbiIsInJlYWQiLCJwb3N0IiwicHJvcG9zZSIsInZvdGUiLCJhZG1pbiJdLCJlcCI6W3siayI6Imxvb3BiYWNrIiwidSI6Imh0dHA6Ly8xMjcuMC4wLjE6NTQzMjEifV0sImV4cCI6MTc2NTAwMDAwMDAwMCwiaG4iOiLlkajlsq3nmoRNYWNCb29rIiwiaWF0IjoxNzY0OTAwMDAwMDAwLCJpZHMiOlsiaXZfN2YzYSJdLCJrZXkiOiJoaTRTN05WTDh2U29jdUtGcFlwQkRLQUU5RTdnTjd4RC1XR25HUk5VSWJvIiwibiI6IjAxMjM0NTY3ODlhYmNkZWYiLCJvbiI6IuWRqOWyrSIsInJlZiI6IktQd1FQMlNvQ0ZUVFVsX21PckpLWVBHUkNsbEwzVzhnTS1jc0xLUmJqdmsiLCJydiI6eyJoYXNoIjoxLCJyZXMiOjEsInZvdGUiOjF9LCJzZWF0cyI6MywidGgiOiJiMDI0NTc1MTQ1OGI5NjgyIiwidXNlcyI6MSwidiI6MX0.ylQzSUvZaTigRYQgQ2gYEfDAm9yInNgVZSSWuA2fOKa3FLbaYVe7c8P5ZydUzbtW79qEWIuc-okIFkyz4fsECA\n---agchat-invite-end---",
+  "expectErr": "bad_signature"
+}

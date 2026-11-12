@@ -1,0 +1,17 @@
+# 统一 LF：Go / Markdown / SQL 在 Linux 与 CI 里都不能带 CRLF
+* text=auto eol=lf
+
+*.go       text eol=lf
+*.md       text eol=lf
+*.sql      text eol=lf
+*.mjs      text eol=lf
+*.json     text eol=lf
+*.yml      text eol=lf
+*.yaml     text eol=lf
+Dockerfile text eol=lf
+go.mod     text eol=lf
+go.sum     text eol=lf
+
+# 二进制
+*.png      binary
+*.jpg      binary

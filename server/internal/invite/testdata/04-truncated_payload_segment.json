@@ -1,0 +1,8 @@
+{
+  "case": "truncated_payload_segment",
+  "note": "截断：payload 段少一截（base64/JSON 不完整）",
+  "expect": "fail",
+  "stage": "parse",
+  "text": "---agchat-invite-begin---\nagchat-invite:v1:eyJhcGkiOjEsImNhcHMiOlsiam9pbiIsInJlYWQiLCJwb3N0IiwicHJvcG9zZSIsInZvdGUiXSwiZXAiOlt7ImsiOiJsb29wYmFjayIsInUiOiJodHRwOi8vMTI3LjAuMC4xOjU0MzIxIn1dLCJleHAiOjE3NjUwMDAwMDAwMDAsImhuIjoi5ZGo5bKt55qETWFjQm9vayIsImlhdCI6MTc2NDkwMDAwMDAwMCwiaWRzIjpbIml2XzdmM2EiXSwia2V5IjoiaGk0UzdOVkw4dlNvY3VLRnBZcEJES0FFOUU3Z043eEQtV0duR1JOVUlibyIsIm4iOiIwMTIzNDU2Nzg5YWJjZGVmIiwib24iOiLlkajlsq0iLCJyZWYiOiJLUHdRUDJTb0NGVFRVbF9tT3JKS1lQR1JDbGxMM1c4Z00tY3NMS1JianZrIiwicnYiOnsiaGFzaCI6MSwicmVzIjoxLCJ2b3RlIjoxfSwic2VhdHMiOjMsInRoIjoiYjAyNDU3NTE0NThiOTY4MiIsInVzZXMiOjEsI.4OzWFz7FY7EJpjdNcNhdvAkY5F42T6oPiikoVy_LNbYRsTLG6TSpJ85nxG8NENfjD9Vf0RpRHoGe7z9o_O_NDg\n---agchat-invite-end---",
+  "expectErr": "truncated"
+}

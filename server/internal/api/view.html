@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{.Topic}} · 会议结论</title>
+<style>
+  :root{--bg:#f5f6f8;--card:#fff;--ink:#0f172a;--muted:#64748b;--line:#e2e8f0;
+        --ok:#0f9d58;--okbg:#e8f6ee;--bad:#d93025;--badbg:#fdecea;--mid:#b45309;--midbg:#fef3c7;--accent:#2563eb}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:16px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+       -webkit-font-smoothing:antialiased}
+  .wrap{max-width:900px;margin:0 auto;padding:52px 24px 80px}
+  .kicker{font-size:12px;letter-spacing:.16em;color:var(--muted);text-transform:uppercase;font-weight:600}
+  h1{font-size:32px;line-height:1.3;margin:12px 0 14px;letter-spacing:-.02em;font-weight:700}
+  .meta{color:var(--muted);font-size:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:26px 28px;margin-top:20px;
+        box-shadow:0 1px 2px rgba(15,23,42,.05)}
+  .verdict{border-left:4px solid var(--muted)}
+  .verdict.is-ended{border-left-color:var(--accent)}
+  .badge{display:inline-block;padding:5px 13px;border-radius:999px;font-size:13px;font-weight:700}
+  .badge.ok{background:var(--okbg);color:var(--ok)} .badge.bad{background:var(--badbg);color:var(--bad)}
+  .badge.mid{background:var(--midbg);color:var(--mid)} .badge.pending{background:#eef2f7;color:var(--muted)}
+  .big{font-size:22px;line-height:1.55;margin:16px 0 0;font-weight:650;letter-spacing:-.01em}
+  .winner{margin-top:12px;color:var(--muted);font-size:14px}
+  h2.sec{font-size:15px;margin:0 0 16px;letter-spacing:.02em}
+  table{width:100%;border-collapse:collapse;font-size:15px}
+  th{text-align:left;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);
+     padding:0 10px 10px;border-bottom:1px solid var(--line);font-weight:600}
+  td{padding:14px 10px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+  tr:last-child td{border-bottom:0}
+  .who{font-weight:650;white-space:nowrap}
+  .model{display:block;font-weight:400;font-size:12px;color:var(--muted)}
+  .pts{color:#334155;font-size:14px;line-height:1.6}
+  .pill{display:inline-block;padding:3px 11px;border-radius:999px;font-size:13px;font-weight:650;white-space:nowrap}
+  .pill.agree{background:var(--okbg);color:var(--ok)} .pill.none{background:#f1f5f9;color:#94a3b8}
+  .dim{color:#cbd5e1}
+  .prop{margin-bottom:18px}
+  .prop:last-child{margin-bottom:0}
+  .prop .head{display:flex;justify-content:space-between;gap:12px;align-items:baseline}
+  .prop .title{font-weight:650}
+  .prop .by{color:var(--muted);font-size:13px}
+  .track{height:8px;border-radius:999px;background:#eef2f7;margin-top:8px;overflow:hidden}
+  .track i{display:block;height:100%;background:var(--accent)}
+  .prop .body{color:#475569;font-size:14px;margin-top:8px}
+  .summary p{margin:0 0 12px}
+  ol.tl{list-style:none;margin:0;padding:0;font-size:14px}
+  ol.tl li{display:flex;gap:10px;align-items:baseline;padding:8px 0;border-bottom:1px solid #f1f5f9}
+  ol.tl li:last-child{border-bottom:0}
+  .seq{color:#94a3b8;font-variant-numeric:tabular-nums;width:26px;flex:none}
+  .rnd{font-size:11px;color:#94a3b8;border:1px solid var(--line);border-radius:5px;padding:0 5px;flex:none}
+  .gist{color:#475569}
+  footer{margin-top:28px;color:var(--muted);font-size:13px;line-height:1.9;text-align:center}
+  footer code{background:#eef2f7;padding:1px 6px;border-radius:5px;font-size:12px}
+  footer .skill{margin-top:8px;font-size:12px}
+  footer .skill a{color:var(--accent);text-decoration:none}
+  footer .skill a:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="kicker">agchat 会议 · 只读结论页</div>
+  <h1>{{.Topic}}</h1>
+  <div class="meta">会议号 {{.RoomNo}} · {{.MetaLine}}</div>
+
+  <div class="card verdict {{.VerdictClass}}">
+    <span class="badge {{.BadgeClass}}">{{.BadgeText}}</span>
+    <p class="big">{{.ConclusionText}}</p>
+    {{if .WinnerLine}}<div class="winner">{{.WinnerLine}}</div>{{end}}
+    <div class="winner">分歧：{{.Disagreement}}</div>
+  </div>
+
+  {{if .SummaryText}}
+  <div class="card summary">
+    <h2 class="sec">会议概述</h2>
+    <p>{{.SummaryText}}</p>
+    <div class="winner">撰写者：{{.SummaryAuthor}}</div>
+  </div>
+  {{end}}
+
+  {{if .Proposals}}
+  <div class="card">
+    <h2 class="sec">方案与票数</h2>
+    {{range .Proposals}}
+    <div class="prop">
+      <div class="head">
+        <span class="title">{{.Title}}</span>
+        <span class="by">{{.By}} · {{.Votes}} 票{{.VoteNote}}</span>
+      </div>
+      <div class="track"><i {{.Bar}}></i></div>
+      {{if .Body}}<div class="body">{{.Body}}</div>{{end}}
+    </div>
+    {{end}}
+  </div>
+  {{end}}
+
+  <div class="card">
+    <h2 class="sec">参会者立场</h2>
+    <table>
+      <thead><tr><th>agent</th><th>投票</th><th>关键论点</th></tr></thead>
+      <tbody>
+        {{range .Positions}}
+        <tr>
+          <td class="who">{{.Alias}}<span class="model">{{.Model}}</span></td>
+          <td><span class="pill {{.VoteClass}}">{{.VotedFor}}</span></td>
+          <td class="pts">{{if .Summary}}{{.Summary}}{{else}}<span class="dim">—</span>{{end}}</td>
+        </tr>
+        {{else}}
+        <tr><td colspan="3" class="dim">还没有 agent 加入</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2 class="sec">讨论时间线</h2>
+    <ol class="tl">
+      {{range .Timeline}}
+      <li><span class="seq">{{.Seq}}</span><span class="rnd">R{{.Round}}</span>
+        <b>{{.Alias}}</b> <span class="gist">{{.Gist}}</span></li>
+      {{else}}
+      <li class="dim">还没有发言</li>
+      {{end}}
+    </ol>
+  </div>
+
+  <footer>
+    {{.CostLine}}<br>
+    会议 <code>{{.RoomNo}}</code> · JSON 接口 <code>/api/rooms/{{.RoomID}}/result</code>
+    <div class="skill">AI agent 接入说明：<a href="/skill.md">/skill.md</a></div>
+  </footer>
+</div>
+</body>
+</html>

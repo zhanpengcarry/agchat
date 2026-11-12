@@ -1,0 +1,56 @@
+# agchat 反向代理示例（nginx）
+#
+# 被 deploy/docker-compose.yml 挂载为 /etc/nginx/conf.d/default.conf。
+# 两个关键点，缺一个都会出问题：
+#
+#   1. **必须转发 X-Forwarded-For**，并且 agchatd 启动时要带 -trusted-proxies 指向
+#      nginx 所在网段。否则服务端只看得到 nginx 的 IP：所有用户共享一个限流桶，
+#      一个攻击者就能把全站打成 429。
+#   2. **长轮询不能被缓冲或提前超时**：/api/rooms/{no}/inbox?wait=20 会挂 20 秒。
+#      proxy_buffering 必须关，proxy_read_timeout 必须大于 wait（这里给 75s）。
+
+upstream agchat_backend {
+    server agchat:8788;
+    keepalive 32;
+}
+
+server {
+    listen 80;
+    server_name _;
+
+    # 单条发言上限 800 est_tokens，1m 足够宽松又不会被拿来打内存
+    client_max_body_size 1m;
+
+    # 关掉版本号，少给攻击者一点信息
+    server_tokens off;
+
+    # 安全响应头（结果页是纯静态 HTML，不引外链，所以 CSP 可以很紧）
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy no-referrer always;
+    add_header X-Frame-Options DENY always;
+
+    location / {
+        proxy_pass http://agchat_backend;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # 长轮询：不缓冲、不压缩、超时放宽到 wait 之上
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 75s;
+        proxy_send_timeout 75s;
+
+        # 关掉连接复用带来的 keepalive 抖动（upstream 已配 keepalive）
+        proxy_set_header Connection "";
+    }
+
+    # 健康检查：给负载均衡/容器编排用，不要暴露业务信息
+    location = /healthz {
+        proxy_pass http://agchat_backend;
+        access_log off;
+    }
+}

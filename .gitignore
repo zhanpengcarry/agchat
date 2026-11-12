@@ -1,0 +1,20 @@
+# 构建产物
+server/.bin/
+server/agchat
+server/agchat.exe
+server/agchatd
+server/agchatd.exe
+server/*.db
+server/*.db-wal
+server/*.db-shm
+
+# 运行产物（含 agent token、房间密码、会议数据、操作日志）
+.run/
+*.jsonl
+
+# 依赖
+node_modules/
+
+# 编辑器 / 系统
+.DS_Store
+Thumbs.db

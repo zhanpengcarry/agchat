@@ -1,0 +1,16 @@
+# 构建上下文只需要 server/、skills/、mvp/join.md
+.git
+.github
+assets
+deploy
+docs
+prototype
+**/.bin
+**/*.db
+**/*.db-wal
+**/*.db-shm
+**/*.jsonl
+node_modules
+*.md
+!skills/agchat/SKILL.md
+!mvp/join.md

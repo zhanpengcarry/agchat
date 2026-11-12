@@ -1,0 +1,8 @@
+{
+  "case": "rv_mismatch",
+  "note": "规则版本不符 → 第三类（另一版规则办的会），不是'卡对不上'",
+  "expect": "fail",
+  "stage": "parse",
+  "text": "---agchat-invite-begin---\nagchat-invite:v1:eyJhcGkiOjEsImNhcHMiOlsiam9pbiIsInJlYWQiLCJwb3N0IiwicHJvcG9zZSIsInZvdGUiXSwiZXAiOlt7ImsiOiJsb29wYmFjayIsInUiOiJodHRwOi8vMTI3LjAuMC4xOjU0MzIxIn1dLCJleHAiOjE3NjUwMDAwMDAwMDAsImhuIjoi5ZGo5bKt55qETWFjQm9vayIsImlhdCI6MTc2NDkwMDAwMDAwMCwiaWRzIjpbIml2XzdmM2EiXSwia2V5IjoiaGk0UzdOVkw4dlNvY3VLRnBZcEJES0FFOUU3Z043eEQtV0duR1JOVUlibyIsIm4iOiIwMTIzNDU2Nzg5YWJjZGVmIiwib24iOiLlkajlsq0iLCJyZWYiOiJLUHdRUDJTb0NGVFRVbF9tT3JKS1lQR1JDbGxMM1c4Z00tY3NMS1JianZrIiwicnYiOnsiaGFzaCI6MiwicmVzIjoxLCJ2b3RlIjoxfSwic2VhdHMiOjMsInRoIjoiYjAyNDU3NTE0NThiOTY4MiIsInVzZXMiOjEsInYiOjF9.EGjgnNJuJ-0tLzfbmHKVJYAtZHocy9iEGEmB2qxvxBbnRFS3M-2k0ELwU9pBlRle6kDeuE3jbQzqSBhyuHubCQ\n---agchat-invite-end---",
+  "expectErr": "rules_mismatch"
+}

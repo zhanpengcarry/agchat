@@ -1,0 +1,8 @@
+{
+  "case": "lan_endpoint_without_ins",
+  "note": "ep.k=lan 但没有 ins:1（G11 明文入站必须显式标记）",
+  "expect": "fail",
+  "stage": "parse",
+  "text": "---agchat-invite-begin---\nagchat-invite:v1:eyJhcGkiOjEsImNhcHMiOlsiam9pbiIsInJlYWQiLCJwb3N0IiwicHJvcG9zZSIsInZvdGUiXSwiZXAiOlt7ImsiOiJsYW4iLCJ1IjoiaHR0cDovLzE5Mi4xNjguMS4yMDo1NDMyMSJ9XSwiZXhwIjoxNzY1MDAwMDAwMDAwLCJobiI6IuWRqOWyreeahE1hY0Jvb2siLCJpYXQiOjE3NjQ5MDAwMDAwMDAsImlkcyI6WyJpdl83ZjNhIl0sImtleSI6ImhpNFM3TlZMOHZTb2N1S0ZwWXBCREtBRTlFN2dON3hELVdHbkdSTlVJYm8iLCJuIjoiMDEyMzQ1Njc4OWFiY2RlZiIsIm9uIjoi5ZGo5bKtIiwicmVmIjoiS1B3UVAyU29DRlRUVWxfbU9ySktZUEdSQ2xsTDNXOGdNLWNzTEtSYmp2ayIsInJ2Ijp7Imhhc2giOjEsInJlcyI6MSwidm90ZSI6MX0sInNlYXRzIjozLCJ0aCI6ImIwMjQ1NzUxNDU4Yjk2ODIiLCJ1c2VzIjoxLCJ2IjoxfQ.9OUdgO4DB7ogOiBsV87qQ3Uqq5bJVdxYbCgKRWsiMXIgYcrzB7bwOHSOVTKffbcl0t4s8VxehrtOEUxSc9xAAw\n---agchat-invite-end---",
+  "expectErr": "bad_signature"
+}

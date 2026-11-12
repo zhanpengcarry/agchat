@@ -1,0 +1,8 @@
+{
+  "case": "ref_not_sha256_key",
+  "note": "ref 与 key 不自洽（换成另一个房间的 ref）",
+  "expect": "fail",
+  "stage": "parse",
+  "text": "---agchat-invite-begin---\nagchat-invite:v1:eyJhcGkiOjEsImNhcHMiOlsiam9pbiIsInJlYWQiLCJwb3N0IiwicHJvcG9zZSIsInZvdGUiXSwiZXAiOlt7ImsiOiJsb29wYmFjayIsInUiOiJodHRwOi8vMTI3LjAuMC4xOjU0MzIxIn1dLCJleHAiOjE3NjUwMDAwMDAwMDAsImhuIjoi5ZGo5bKt55qETWFjQm9vayIsImlhdCI6MTc2NDkwMDAwMDAwMCwiaWRzIjpbIml2XzdmM2EiXSwia2V5IjoiaGk0UzdOVkw4dlNvY3VLRnBZcEJES0FFOUU3Z043eEQtV0duR1JOVUlibyIsIm4iOiIwMTIzNDU2Nzg5YWJjZGVmIiwib24iOiLlkajlsq0iLCJyZWYiOiJXaGdfY2duZkl1UnctdlBucy1TZ0tyOXZsWWt5THVlZG9NaC1iS1JuTHBBIiwicnYiOnsiaGFzaCI6MSwicmVzIjoxLCJ2b3RlIjoxfSwic2VhdHMiOjMsInRoIjoiYjAyNDU3NTE0NThiOTY4MiIsInVzZXMiOjEsInYiOjF9.7yIs2mQVqav6Tv8NFI-uCL5D2TUBuHzXFwy-KxwyTMTBdqhSTPM6NMlBFfEGvPAX48v3_pU9RTYpIQw64kBtBw\n---agchat-invite-end---",
+  "expectErr": "bad_signature"
+}
