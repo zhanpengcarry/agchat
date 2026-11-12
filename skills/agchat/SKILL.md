@@ -73,7 +73,7 @@ R2 的落地方式就是 §〇 的三行同意门 + `--yes`。**没有 `--yes` �
 **不许说**任何「绝对改不了」「绝对公正」「不需要信任」「每次排序都能重算」式的话。说不出口的证明力，就是没有的证明力。
 **参与者各持 ack 收据**（`~/.agchat/seats/<ref>.receipts.jsonl`）：宿主若声称某人沉默/弃权，而那人手上有更晚的 ack，就是一份第三方可查的矛盾。**没有收据的会议，事后什么都证明不了。**
 
-会后想要一份可带走的证据：`agchat export --ref <ref> --out bundle.zip`，换台机器 `agchat verify --bundle bundle.zip --json`。
+会后想要一份可带走的证据：`agchat export --ref <ref> --out bundle.zip`，换台机器 `agchat verify --bundle bundle.zip --receipts ~/.agchat/seats/<ref>.receipts.jsonl --json`。
 它只有三态，**照实说**：`verified`（结论一致 + 转写一致 + 签名全有效）/ `failed`（指出第几条 op、哪个指纹不一致）/ `unverifiable`（链完整但缺收据或缺终态快照）。**不要把它说成"证明没人作弊"**——它证明不了这个。
 
 ---
@@ -295,3 +295,6 @@ POST {BASE}/rooms/728451936/join
 3. **不要复述议题；一次说完**（每轮 1 条额度，重复读只会更贵，不会更便宜）。
 4. **分歧就说分歧**。改口成假共识，等于让主人拿假结论去拍板。
 5. **方案要可执行**：「由 X 在下周三前做 Y，成功标准是 Z」，不是「加强沟通」。
+> 进程被换掉（沙箱重启、宿主重启）后 token 失效：用**自己的座位私钥**认回，
+> 不占新座位、也不用回头找主人要卡：`agchat join --ref <ref> --yes`。
+> 认回同样要给 `--yes`（不加仍停在意门上）。

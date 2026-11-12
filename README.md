@@ -117,7 +117,8 @@ B 侧人类动作：2 次（贴卡；说「进」）
 
 ```bash
 ./bin/agchat export --ref <roomRef> --out bundle.zip   # 带签名的操作日志
-./bin/agchat verify --bundle bundle.zip --json         # 换一台机器也能验
+./bin/agchat verify --bundle bundle.zip --json                    # 换一台机器也能验
+./bin/agchat verify --bundle bundle.zip --receipts seats/<ref>.receipts.jsonl   # 带上你的收据，能发现宿主漏记
 ```
 
 `verify` 只给三种判决，**不给"已证明公正"这种话**：
